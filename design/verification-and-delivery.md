@@ -91,9 +91,9 @@ The renderer backend is now selected as browser-based PixiJS. Noto Sans JP Regul
 
 ## Current evidence and remaining checks
 
-Automated tests cover font coverage and fitting, empty text round-trips, canonical restore, daily catch-up, rollback across restart, same-scene cursor persistence, immutable old snapshots, rejected uploads, conditional responses, failed writes, and commit-error fail-closed behavior. A subprocess exits without closing SQLite before commit and after publication; reopening verifies old or committed state respectively. These tests do not simulate device power loss or every instruction boundary.
+Automated tests cover font coverage and fitting, empty text round-trips, canonical restore, daily catch-up, rollback across restart, same-scene cursor persistence, immutable old snapshots, rejected uploads, conditional responses, failed writes, and commit-error fail-closed behavior. A parent process now kills a subprocess at four explicit service boundaries for publication, scene-changing consumption, and same-scene consumption. Reopening verifies the complete previous or committed state in all 12 cases. These tests do not simulate device power loss or interruption inside SQLite's commit implementation.
 
-The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. After clearing Docker build caches, the same upload/restart/conditional-response trial also passed with the production Compose named volume. Further work includes real-socket slow-client stress, transaction kill hooks at every point listed above, and target-device qualification. Browser staging failures are now exercised by the development checks described below. Model checks remain separate evidence, not a proof of the Go or browser implementation.
+The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. After clearing Docker build caches, the same upload/restart/conditional-response trial also passed with the production Compose named volume. Further work includes real-socket slow-client stress, storage I/O fault injection within SQLite commit, and target-device qualification. Browser staging failures are now exercised by the development checks described below. Model checks remain separate evidence, not a proof of the Go or browser implementation.
 
 ### Deterministic HTTP integration coverage
 
@@ -116,3 +116,19 @@ Actual PixiJS applications, decoded bitmaps, and observed textures are checked f
 ### Deferred appliance validation
 
 Target hardware is not currently available. At the user's direction, target-device trials are deferred for this iteration. Long-duration operation, memory/performance measurements, physical-display resolution checks, browser qualification on that device, and device power-loss behavior remain unverified. Local browser checks and Docker integration tests continue independently; deferral does not count as a passing appliance trial.
+
+### Process termination at transaction boundaries
+
+`internal/store/crash_test.go` tests three operations at four boundaries:
+
+| Operation | Before transaction | After write, before commit | After commit, before runtime update | After runtime update, before return |
+|---|---|---|---|---|
+| Replace package, including different image bytes | Previous state | Previous state | New state | New state |
+| Consume a transition to another scene | Previous cursor and target | Previous cursor and target | Advanced cursor and target | Advanced cursor and target |
+| Consume a transition retaining the same scene | Previous cursor | Previous cursor | Advanced cursor | Advanced cursor |
+
+The child executes the real `Publish` or `Snapshot` method, signals arrival at an internal checkpoint, and blocks. The parent then kills it without running deferred rollback or store cleanup. Each case uses a private temporary database. Recovery samples a clock behind both possible cursors and compares generation, canonical package bytes, target, cursor, complete response bytes, ETag, and SQLite `integrity_check`. Different image bytes expose accidental mixing between package generations.
+
+Checkpoints are unexported per-store callbacks installed only by tests. Production exposes no environment variable, HTTP control, or public option for activating them. The child-process environment is read only by the test helper.
+
+Deferred-constraint fault injection also exercises commit errors in both publication and consumption. Once commit returns an error, snapshots and further publication are rejected until reopening. Reopening with a backward clock restores the unchanged durable snapshot for this known rollback case. This demonstrates conservative error handling, not arbitrary disk-failure recovery or power-loss durability.

@@ -89,6 +89,7 @@ docker compose -p glypha-dev -f compose.dev.yml run --rm --no-deps renderer sh -
 
 After changing Dockerfiles or dependency manifests, rebuild the relevant images before running checks.
 The scheduler tests compare catch-up lookup against independent occurrence enumeration, including negative Unix seconds, boundary times, and clock rollback. Content tests include malformed JSON, missing references, PNG/JPEG decoding, animation rejection, and resource bounds.
+Persistence tests kill child processes at 12 publication/consumption boundaries, then reopen SQLite and verify complete state and image snapshots. Commit-error tests cover both publication and scheduling updates. These use temporary databases and do not touch the running service's content.
 HTTP integration tests pause response writes and request reads at deterministic boundaries. They verify admission limits, publication during slow transfers, coherent image snapshots across replacement, interrupted-upload recovery, and durable scheduling before a conditional `304` response. Run concurrency checks with:
 
 ```sh

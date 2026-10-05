@@ -39,6 +39,8 @@ type Store struct {
 	generation, target string
 	cursor             int64
 	failed             bool
+	// Tests install a per-store hook; production never supplies one.
+	checkpoint func(operation, phase string)
 }
 
 func Open(path string, c *compiler.Compiler, clock Clock) (*Store, error) {
@@ -123,12 +125,18 @@ func (s *Store) initialize(c *compiler.Compiler) error {
 }
 func (s *Store) Close() error  { s.mu.Lock(); defer s.mu.Unlock(); s.failed = true; return s.db.Close() }
 func (s *Store) Healthy() bool { s.mu.Lock(); defer s.mu.Unlock(); return !s.failed }
+func (s *Store) reach(operation, phase string) {
+	if s.checkpoint != nil {
+		s.checkpoint(operation, phase)
+	}
+}
 func (s *Store) Publish(ctx context.Context, c *compiler.Candidate) (Publication, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed {
 		return Publication{}, ErrUnavailable
 	}
+	s.reach("publish", "before_begin")
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Publication{}, err
@@ -148,15 +156,18 @@ func (s *Store) Publish(ctx context.Context, c *compiler.Candidate) (Publication
 	if err != nil {
 		return Publication{}, err
 	}
+	s.reach("publish", "after_write")
 	if err = tx.Commit(); err != nil {
 		s.failed = true
 		s.candidate = nil
 		return Publication{}, err
 	}
+	s.reach("publish", "after_commit")
 	s.candidate = c
 	s.generation = generation
 	s.target = o.Scene
 	s.cursor = now
+	s.reach("publish", "after_runtime")
 	return Publication{generation, o.Scene}, nil
 }
 func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -173,6 +184,7 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	if due {
+		s.reach("consume", "before_begin")
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return Snapshot{}, err
@@ -181,13 +193,16 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 		if _, err = tx.ExecContext(ctx, "UPDATE current SET cursor=?,target=? WHERE id=1", o.Second, o.Scene); err != nil {
 			return Snapshot{}, err
 		}
+		s.reach("consume", "after_write")
 		if err = tx.Commit(); err != nil {
 			s.failed = true
 			s.candidate = nil
 			return Snapshot{}, err
 		}
+		s.reach("consume", "after_commit")
 		s.cursor = o.Second
 		s.target = o.Scene
+		s.reach("consume", "after_runtime")
 	}
 	body, etag, err := s.candidate.Snapshot(s.generation, s.target)
 	return Snapshot{body, etag}, err

@@ -6,7 +6,6 @@ import (
 	"github.com/kuny/glypha/internal/compiler"
 	"github.com/kuny/glypha/internal/content"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -152,93 +151,63 @@ func TestUnknownSchemaFails(t *testing.T) {
 }
 
 func TestCommitFailureStopsServing(t *testing.T) {
-	c, candidate := setup(t)
-	clock := &fakeClock{at("2026-10-05T09:00:00+09:00")}
-	s, err := Open(filepath.Join(t.TempDir(), "test.db"), c, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if _, err := s.Publish(context.Background(), candidate); err != nil {
-		t.Fatal(err)
-	}
-	// Deferred constraints fail at Commit, after the UPDATE itself succeeds.
-	_, err = s.db.Exec(`CREATE TABLE parent(id INTEGER PRIMARY KEY);
- CREATE TABLE child(id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);
- CREATE TRIGGER fail_commit AFTER UPDATE ON current BEGIN INSERT INTO child VALUES(1); END;`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Publish(context.Background(), candidate); err == nil {
-		t.Fatal("commit unexpectedly succeeded")
-	}
-	if s.Healthy() {
-		t.Fatal("store remained healthy after commit failure")
-	}
-	if _, err := s.Snapshot(context.Background()); err != ErrUnavailable {
-		t.Fatalf("state served after commit failure: %v", err)
-	}
-}
-
-// The helper exits without closing SQLite, simulating process loss at a transaction boundary.
-func TestCrashRecovery(t *testing.T) {
-	if path := os.Getenv("GLYPHA_CRASH_TEST_DB"); path != "" {
-		c, candidate := setup(t)
-		clock := &fakeClock{at("2026-10-05T14:00:00+09:00")}
-		s, err := Open(path, c, clock)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if os.Getenv("GLYPHA_CRASH_TEST_PHASE") == "before" {
-			tx, err := s.db.Begin()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := tx.Exec("UPDATE current SET generation='uncommitted',cursor=?,target='afternoon' WHERE id=1", clock.now.Unix()); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			if _, err := s.Publish(context.Background(), candidate); err != nil {
-				t.Fatal(err)
-			}
-		}
-		os.Exit(73)
-	}
-	for _, phase := range []string{"before", "after"} {
-		t.Run(phase, func(t *testing.T) {
+	for _, operation := range []string{"publish", "consume"} {
+		t.Run(operation, func(t *testing.T) {
 			c, candidate := setup(t)
-			path := filepath.Join(t.TempDir(), "crash.db")
 			clock := &fakeClock{at("2026-10-05T09:00:00+09:00")}
+			path := filepath.Join(t.TempDir(), "test.db")
 			s, err := Open(path, c, clock)
 			if err != nil {
 				t.Fatal(err)
 			}
-			initial, err := s.Publish(context.Background(), candidate)
+			defer func() {
+				if s != nil {
+					s.Close()
+				}
+			}()
+			if _, err := s.Publish(context.Background(), candidate); err != nil {
+				t.Fatal(err)
+			}
+			before, err := s.Snapshot(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.Close()
-			cmd := exec.Command(os.Args[0], "-test.run=^TestCrashRecovery$")
-			cmd.Env = append(os.Environ(), "GLYPHA_CRASH_TEST_DB="+path, "GLYPHA_CRASH_TEST_PHASE="+phase)
-			output, err := cmd.CombinedOutput()
-			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 73 {
-				t.Fatalf("helper: %v %s", err, output)
+			// Deferred constraints fail at Commit, after the UPDATE itself succeeds.
+			_, err = s.db.Exec(`CREATE TABLE parent(id INTEGER PRIMARY KEY);
+ CREATE TABLE child(id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);
+ CREATE TRIGGER fail_commit AFTER UPDATE ON current BEGIN INSERT INTO child VALUES(1); END;`)
+			if err != nil {
+				t.Fatal(err)
 			}
+			if operation == "publish" {
+				_, err = s.Publish(context.Background(), candidate)
+			} else {
+				clock.now = at("2026-10-05T14:00:00+09:00")
+				_, err = s.Snapshot(context.Background())
+			}
+			if err == nil {
+				t.Fatal("commit unexpectedly succeeded")
+			}
+			if s.Healthy() {
+				t.Fatal("store remained healthy after commit failure")
+			}
+			if _, err := s.Snapshot(context.Background()); err != ErrUnavailable {
+				t.Fatalf("state served after commit failure: %v", err)
+			}
+			if _, err := s.Publish(context.Background(), candidate); err != ErrUnavailable {
+				t.Fatalf("publication allowed after commit failure: %v", err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			clock.now = at("2026-10-05T08:00:00+09:00")
 			s, err = Open(path, c, clock)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer s.Close()
-			snapshot, err := s.Snapshot(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if phase == "before" {
-				if s.generation != initial.Generation || target(t, snapshot) != "closed" {
-					t.Fatal("uncommitted state survived")
-				}
-			} else if s.generation == initial.Generation || target(t, snapshot) != "afternoon" {
-				t.Fatal("committed state lost or replayed")
+			restored, err := s.Snapshot(context.Background())
+			if err != nil || restored.ETag != before.ETag || !s.Healthy() {
+				t.Fatal("restart did not restore durable state", err)
 			}
 		})
 	}
