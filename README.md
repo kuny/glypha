@@ -140,6 +140,7 @@ See [operations](ops/README.md) for startup, updates, health recovery, offline b
 ## Design and models
 
 - [Concept](Concept.md)
+- [Development method](DevelopmentMethod.md)
 - [Accepted behavioral decisions](DesignDecisions.md)
 - [Implementation design](design/README.md)
 - [Alloy models and verification](model/README.md)
