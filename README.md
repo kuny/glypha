@@ -6,17 +6,19 @@ All documentation and source comments are written in English.
 
 ## Current implementation
 
-This is the development-environment bootstrap. It includes:
+The development environment and the first content/time core are implemented. They include:
 
 - A Go HTTP server with graceful shutdown, health checks, and static renderer delivery.
 - A PixiJS Builtin scene and serial polling of the display endpoint.
 - Vite development with hot module replacement and a same-origin API proxy.
 - A multi-stage Docker build and separate development Compose configuration.
+- Strict content structure, reference, resource, and static-image validation in `internal/content`.
+- Pure daily schedule evaluation, bounded generation, and catch-up lookup in `internal/schedule`.
 
 `GET /display` currently returns `204` because no content service exists yet.
 `PUT /content` returns a structured `501 not_implemented` error.
-Content validation, SQLite storage, schedule generation, AST rendering, and ETag handling remain implementation work.
-The sample content under `examples/` describes the proposed format and cannot be uploaded successfully yet.
+The core packages are not connected to the HTTP publication path yet. Exact glyph/text-layout validation with the selected Noto Sans JP font, AST compilation, SQLite storage, stateful scheduling integration, AST rendering, and ETag handling remain implementation work.
+The sample content under `examples/` is exercised by the content validation tests, but cannot be uploaded successfully yet. A structurally validated document is not a publishable AST.
 
 ## Run the built application
 
@@ -74,7 +76,7 @@ Compose publishes ports on loopback only. Container processes bind internally on
 
 ## Checks
 
-Go handler tests run during the application image build; the renderer build runs TypeScript checking.
+Go content, schedule, and handler tests run during the application image build; the renderer build runs TypeScript checking.
 For explicit checks without installing host runtimes:
 
 ```sh
@@ -83,6 +85,8 @@ docker compose -p glypha-dev -f compose.dev.yml run --rm --no-deps renderer sh -
 ```
 
 After changing Dockerfiles or dependency manifests, rebuild the relevant images before running checks.
+The scheduler tests compare catch-up lookup against independent occurrence enumeration, including negative Unix seconds, boundary times, and clock rollback. Content tests include malformed JSON, missing references, PNG/JPEG decoding, animation rejection, and resource bounds.
+
 For a host workflow, use Go 1.26 or newer and Node 24:
 
 ```sh
@@ -107,7 +111,7 @@ The image health-check command targets internal port 8080. If overriding the int
 `GLYPHA_API_URL` is a Vite proxy setting, never a URL embedded in browser code.
 
 Dependencies are pinned in `renderer/package.json` and its lockfile. The Docker build uses Go 1.27.1 and the Node 24 Debian image family; base-image updates remain a deliberate rebuild concern.
-Builtin currently uses a system serif font. It is not yet the bundled, reproducible rendering profile described in the design.
+Builtin uses the locally bundled Noto Sans JP at Regular (400). PixiJS waits for the face to load before measuring or rendering text; the HTML startup scene remains available if font loading fails. Font bytes, version, selected variation, checksum, and license are recorded in [font provenance](renderer/public/fonts/noto-sans-jp/PROVENANCE.txt). Exact server-side glyph and text-layout validation remains pending.
 Errors are logged to the server or browser console and never replace Builtin.
 
 ## Design and models
@@ -117,4 +121,4 @@ Errors are logged to the server or browser console and never replace Builtin.
 - [Implementation design](design/README.md)
 - [Alloy models and verification](model/README.md)
 
-The backend is now selected as browser-based PixiJS. Exact font/layout compatibility, graphics resource ownership, and complete AST-to-frame validation are the next renderer design work.
+The backend is now selected as browser-based PixiJS. Noto Sans JP Regular (400) is the selected font. Shared layout compatibility, graphics resource ownership, and complete AST-to-frame validation are the next renderer design work.

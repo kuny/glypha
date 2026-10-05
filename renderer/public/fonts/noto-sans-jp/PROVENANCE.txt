@@ -1,0 +1,28 @@
+Font: Noto Sans JP
+Selected style: Regular, normal, weight 400
+Glypha rendering profile: noto-sans-jp-2.004-regular-400-v1
+
+Upstream distribution: Google Fonts
+Repository commit: 66a36c8c94b1a5d992ee4e7f392fccfe4945767c
+Original filename: NotoSansJP[wght].ttf
+Source: https://github.com/google/fonts/blob/66a36c8c94b1a5d992ee4e7f392fccfe4945767c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf
+Font version: Version 2.004-H2;hotconv 1.0.118;makeotfexe 2.5.65603
+Local filename: NotoSansJP.ttf
+SHA-256: c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f
+Size: 9589900 bytes
+
+The original font bytes are unmodified. The upstream file is a variable font
+with a weight axis from 100 to 900. Glypha exposes only weight 400 and explicitly
+sets the face's wght variation to 400. The internal family name includes Thin;
+that is upstream variable-font metadata, not the selected rendering weight.
+
+The full font is bundled without subsetting, retaining Japanese and Latin
+coverage. It is served locally and requires no request to Google Fonts at
+runtime. No uploaded font, synthetic bold, or synthetic italic is supported.
+
+License: SIL Open Font License 1.1. See OFL.txt in this directory.
+Copyright: See OFL.txt and the font's original embedded metadata.
+
+Future server-side layout must use these same bytes and the same wght=400
+instance. Loading a font in the browser does not by itself validate glyph
+coverage or prove equivalent server/browser text layout.

@@ -2,7 +2,6 @@
 **/node_modules
 **/dist
 model
-examples
 design
 *.md
 .DS_Store

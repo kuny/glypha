@@ -15,6 +15,7 @@ ENV GLYPHA_ADDR=:8080
 COPY go.mod ./
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY examples/ examples/
 CMD ["go", "run", "./cmd/glypha"]
 
 FROM server-dev AS server-build
