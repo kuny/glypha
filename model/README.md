@@ -1,118 +1,137 @@
-# 設計前の不変条件 — Alloy 6
+# Invariants Before Design — Alloy 6
 
-[Concept.md](../Concept.md) の状態遷移に関わる部分を、独立した3つのモデルに分けた。
-実装の正しさの証明ではなく、仕様の候補・必要な前提・反例を設計前に確認するためのもの。
-`var`、`always`、`eventually`、`after`、次状態を表す `'` を使う Alloy 6 のモデルである。
+These models capture [Concept.md](../Concept.md) and the six accepted [design decisions](../DesignDecisions.md).
+Three models isolate individual responsibilities; an integration model covers their boundaries.
+They examine specification contracts, necessary assumptions, and counterexamples rather than proving an implementation correct.
+They use Alloy 6's `var`, `always`, `eventually`, `after`, and the next-state operator `'`.
 
-## 対象と検査する性質
+## Models and properties
 
-| モデル | Concept | 不変条件・検査対象 |
+| Model | Scope | Invariants and checks |
 |---|---|---|
-| [content.als](content.als) | §5–6 | 未検証パッケージを公開しない。ASTと資産を同じパッケージとして原子的に公開する。検証結果を別のアップロードに流用しない。拒否で現行内容を変えない。 |
-| [scheduler.als](scheduler.als) | §7–10、19 | pending/consumedの分離、消費の単調性、過去区間の再生成禁止、早すぎる切替の禁止、照合結果の一意性、期限切れの除去。 |
-| [renderer.als](renderer.als) | §11–14 | 起動時を含め表示は常に有効。描画成功だけが表示を変更する。通信・応答・描画の失敗で表示を変えない。条件付きの復旧後収束。 |
+| [content.als](content.als) | Validation and publication | Never publish an unvalidated package. Publish AST and assets together. Never reuse validation results for another upload. Preserve current content on rejection. |
+| [scheduler.als](scheduler.als) | Time and finite batches | Separate pending and consumed entries, consume monotonically, prevent historical regeneration and early transitions, and catch up to the latest unconsumed scene. |
+| [renderer.als](renderer.als) | Rendering and failure | Display valid content from startup onward. Change the display only after successful rendering. Preserve it on failure. Converge after recovery under explicit conditions. |
+| [lifecycle.als](lifecycle.als) | Generations, restarts, and assets | Keep package, pending entries, and target coherent. Preserve consumption across restarts. Retain assets for old responses and displayed scenes. Support retries and serial processing. |
 
-JSONの具体的文法、ピクセル配置、HTTPの形式は今回の対象外。状態を増やすより、
-「何を検証したら公開してよいか」「どこで消費・公開・表示を確定するか」を先に分離した。
-assertion自体をfactとして仮定せず、初期状態と操作のガード／更新から検査する。
-各操作は変更しないフィールドも明示し、意図しない次状態の自由度を残さない。
+Assertions are checked against initial states and operation guards and updates; they are not assumed as facts.
+Each operation explicitly preserves fields it does not change. JSON syntax, pixel layout, HTTP formats, and filesystem behavior are outside the scope.
 
-## モデルに置いた仮定（確定仕様ではない）
+## How the accepted decisions are modeled
 
-### コンテンツ
+### 1. Catch-up and clock rollback
 
-- パッケージ、AST、資産の参照関係は不変。検証はJSON正常・AST構築可能・参照資産が揃うこと。
-  画面内に収まるか、デコーダが実際に成功するかは別の実装上の検証が必要。
-- 初回アップロード前は現行パッケージがない。それ以降は最大1件。
-  `staged` は公開前の作業領域であり、履歴や第2の現行コンテンツではない。
-- `upload → validate → commit`。別のuploadが入ったら検証結果を破棄する。
-  同時アップロードは操作の任意の交錯として探索するが、複数作業領域やロックはモデル化しない。
-- commitはASTと資産の原子的な永続化境界。crashは作業領域だけを失い、公開済み内容を保持する。
-  ディスクの部分書込みを検証したものではなく、実装が提供すべき契約。
-- 1パッケージの複数シーンは、公開時の参照整合性に必要な1つのASTに抽象化している。
+`scheduler.als` covers one content generation and permits stopped time, rollback, and forward jumps.
+`due` contains unconsumed entries whose start seconds are at or before the current time. `winner` is the latest such entry.
+There is no matching-window expiry. A poll consumes all due entries and sets the target to the winner's AST.
+An input constraint prohibits conflicting entries with the same start second within a generation.
 
-### スケジュール
+`consumed` includes skipped intermediate scenes, not just displayed scenes. It does not mean delivered or rendered.
+When pending is empty, another batch can be added after the previously issued interval.
+**New batches are not restricted to the current time or later.** If the clock jumps beyond the generated period,
+transitions in the elapsed interval must also be added before catching up.
+`RefillPastDue` explores consuming elapsed entries from a batch added after exhaustion.
 
-- 1つのコンテンツ世代内を扱う。時刻は秒単位の入力で、停止・逆行・飛び越しを許す。
-  秒未満切捨てそのもの、タイムゾーン、日付・夏時間の変換はモデル外。
-- 照合窓の候補は **`start <= now < start + 10`**。事前切替はしない。終了端は含めない。
-  窓が重なる場合は開始時刻が最も新しいものを選ぶ。同一開始秒の競合は入力で禁止する仮定。
-- pollでは開始時刻を過ぎた全エントリを消費する。`consumed` は表示済みだけでなく、
-  期限切れでスキップしたものも含む。消費済みと配信／描画済みは異なる。
-- 選んだASTを `target` として保持する。これは通信失敗後の再取得を可能にする設計候補。
-  一度だけの応答イベントにしてしまうと、応答喪失後に再取得できなくなる。
-- pendingが空になったら、未発行かつ現在時刻以降、さらに発行済み区間より後の有限バッチを追加できる。
-  逆行時もこの区間の境界を戻さない。発行済み集合は検査用の履歴で、実装に全履歴保存を要求しない。
-  時刻境界などへの圧縮が別途必要。
-- 生成は可能な操作であり、自動実行や公平性は仮定しない。有限スコープ内のEntryを使い切った後の
-  無限の再生成能力や、生成器の期間カバレッジは証明していない。
+Continuous period coverage and the ability to generate indefinitely are not proven.
+The abstraction permits arbitrary subsets as batches, so generating every required entry remains an implementation contract.
+`issued` and `consumed` are verification history; they do not require the implementation to retain all history.
+The design must distinguish the generated-period boundary from the consumption boundary and map them to a compact representation.
 
-### レンダラー
+### 2. Selecting the initial scene and switching generations
 
-- Builtinは有効な初期シーン。画面には必ず1つのASTがあり、エラー画面を表す状態はない。
-- ASTの有効性と、実際の描画成功を分ける。有効なASTでも描画失敗が起こりうる。
-  失敗の各原因は、表示保持に関して同じ遷移になるため `failure` にまとめる。
-- 成功時だけ画面を原子的に交換する。部分描画は公開されない前提。
-  保持画面は自己完結しているものとし、旧資産の削除による破損はモデル外。
-- レンダラーに時刻・スケジュールを渡さない。応答は1件まで保持でき、取得中にサーバーのtargetが変わりうる。
-- rendererプロセスの再起動は未モデル化。永続化して旧画面に復帰するか、Builtinに戻るかは要決定。
-  OS／電源障害の間も物理画面が表示し続けることは保証しない。
+`content.als` models staging through `upload → validate → commit`.
+Another upload discards the validation result; commit publishes AST and assets atomically.
+Packages are immutable. Validation abstracts well-formed JSON, AST construction, and the presence of referenced assets.
+Current content is empty before the first publication and contains at most one package thereafter. Staging is a workspace, not history.
 
-## 反例から設計で決めること
+In `lifecycle.als`, activate accepts only validated packages and additionally requires that the latest applicable scene
+can be determined at publication time. It switches the current package, target, pending entries, and consumption state together.
+Pending entries from the old generation are discarded. A static Package atom represents an upload generation, so the same atom is not published again.
+This does not prohibit uploading identical content again: another upload is represented by a new generation.
+Unlike the standalone content model's single-AST abstraction, the integration model permits multiple entries per package.
 
-以下の3つは意図的に偽の仮説であり、`check ... expect 1` で反例が出ることを確認する。
+### 3. Repeated retrieval
 
-1. **EveryDuePollChangesTarget** — 窓を逃した要求は更新を得られない。
-   検出例：start=8のエントリをnow=0で生成し、時計が18に飛んだ後に初回pollすると窓外。
-   エントリは消費されtargetは空のまま。
-   窓方式を維持するなら長時間旧画面／Builtinに留まることを受容する必要がある。
-   別案は「現在時刻以前の最新シーンに追いつく」方式だが、これは本モデルと異なる意味論。
-2. **UnconditionalDelivery** — targetを設定した後にfailure／idleが続けば、表示はBuiltinのまま。
-   「表示を壊さない」から「必ず更新できる」は導けない。`DeliveryWithRecovery` では、
-   targetが最終的に固定され、fetch直後の描画成功が繰り返されるという強い前提の下で収束を検査する。
-   ネットワークが一度復旧するだけではこの前提を満たさない。
-3. **AlwaysLatest** — Aを取得した後にtargetがBへ変わり、Aの描画が成功しうる。
-   有効な画面の保持は満たしても、サーバーの最新状態との一致は別問題。
-   一時的な古さを許容するか、世代識別／古い応答の拒否が必要かを決める。
+The target remains after consumption and is not lost on fetch or failure.
+`RetryAfterLoss` in the integration model checks reachability of fetch → failure → fetch → render.
+Activate, advance, and fetch cannot execute while the server is down.
 
-さらに、3モデルを結合する前に次を決める必要がある。これらは今回証明済みとは扱わない。
+### 4. Asset retention
 
-- **アップロードとスケジュールの切替**：旧世代pendingの無効化と新世代target公開の境界。
-  新規内容の最初の切替が将来の場合、直ちに何を表示するか。
-- **資産の寿命**：旧パッケージ削除後も、表示中／取得中の旧ASTが参照する画像を保持できるか。
-  ASTと資産を一緒に保持するか、取得完了まで削除を遅延するか。
-- **再起動と逆行**：消費境界を失うと同じ時刻のエントリを再生成しうる。
-  境界を永続化するか、「再生しない」の保証をプロセス生存期間に限定するか。
-- **スケジュール枯渇**：生成失敗時もtargetを維持すること、再生成の起点、隙間のない期間カバレッジ。
+The integration model's response and copied fields represent a retrieved snapshot owned by the renderer.
+Render can execute only when referenced assets are present, and updates display and retained assets together.
+Displayed assets survive independently of package replacement.
+`ReplaceDuringFetch` explores an old response retaining assets absent from the new package and remaining renderable after replacement.
 
-## 実行と結果
+Fetch abstracts a successful transfer of a complete snapshot as one operation.
+Partial transfers or generation mismatches are discarded as failures, like other failures before the display swap.
+Races involving deletion of old files during transfer and image decoding are not explored directly.
+The implementation must either complete a coherent transfer or fail safely; atomic fetch expresses that contract.
 
-Alloy 6.2.0 / SAT4Jで全30コマンドを検査。15件の不変条件・条件付き性質はUNSAT（反例なし）、
-3件の上記仮説はSAT（期待した反例あり）、12件の到達可能性シナリオはSAT。
-シナリオには拒否後の置換、検証後クラッシュ、資産欠落、時計逆行、停止、窓飛越し、
-終了端、窓の重複、枯渇後の追加、無効応答、描画失敗と復旧を含む。
+### 5. Persistence and restart
 
-通常のスコープは各sig最大4 atom、1〜8状態（長い復旧例は10状態）。
-スケジューラーの一部シナリオは3 atom／6状態。正確な指定は各コマンド末尾を参照。
-秒は6-bit Intでstart=0..20、now=0..30。start+10は最大30なのでオーバーフローしない。
-有限の状態数で表現するループ付きトレースの有界検査であり、任意サイズ・任意長の証明ではない。
+The integration model treats current, target, pending, consumed, and used as durable state.
+Restart switches the server between Up and Down while preserving these fields.
+The specification assumes that a crash before or after an atomic operation cannot expose a partial publication.
+It does not verify partial filesystem writes or persistence ordering.
+`RestartThenRollback` explores shutdown after consumption, clock rollback, and recovery.
 
-[公式リリース](https://github.com/AlloyTools/org.alloytools.alloy/releases/tag/v6.2.0) のJARを用意し、
-リポジトリルートで次を実行する（JavaとPython 3が必要）。
+Pending entries must either be stored or reconstructed from saved state that yields the same set.
+The integration model prepares a finite set of entries when publishing a generation; batch regeneration is covered by the standalone scheduler model.
+This is therefore not a complete composition proof including the generator and persistence layer.
+Renderer process restarts, disk corruption, and loss of power to the physical display are outside the model.
+
+### 6. Serial processing and temporary staleness
+
+Fetch in the integration model is enabled only when response is empty.
+No new acquisition starts until the previous one has rendered or failed.
+An old response may be rendered even if the target changes during acquisition.
+The standalone renderer model covers rendering failure despite a valid AST, invalid responses, and the built-in initial scene.
+Builtin is valid initial content; no technical error screen is introduced.
+
+## Counterexamples and accepted decisions
+
+The original model's `EveryDuePollChangesTarget` exposed a counterexample: polling at now=18 for start=8 left the target empty.
+The matching window has been removed, and `EveryDuePollHasTarget` is now checked with `expect 0`.
+`CatchUpAfterGap` confirms a reachable example in which a poll at least ten seconds late still selects a target.
+
+Two hypotheses remain deliberately false and are checked with `check ... expect 1` to require counterexamples:
+
+- **UnconditionalDelivery**: a target may never be displayed if communication or rendering keeps failing.
+  `DeliveryWithRecovery` checks convergence under the strong assumption that the target eventually stabilizes and
+  successful fetch-then-render operations recur. A single communication recovery does not establish that assumption.
+- **AlwaysLatest**: if the target changes after retrieval, an old valid response can still render successfully.
+  This agrees with the accepted policy of allowing temporary staleness.
+
+## Execution and results
+
+All 41 commands were checked with Alloy 6.2.0 / SAT4J. The 23 invariant and conditional-property checks were UNSAT (no counterexample),
+the two hypotheses above were SAT (expected counterexamples), and all 16 reachability scenarios were SAT.
+
+The usual scope is at most four atoms per signature and 1–8 states, with ten states for a longer recovery scenario.
+The integration model uses at most three atoms per signature and 1–7 states, or eight states for scenarios; ordering fixes Tick to exactly three atoms.
+Some scheduler scenarios use three atoms and six states. See each command for its exact scope.
+Scheduler seconds use 6-bit Int, with start=0..20 and now=0..30.
+The scenario expression start+10 is at most 30, so it cannot overflow.
+Tick in the integration model abstracts the ordering of seconds, not their numeric spacing.
+Sub-second truncation, time zones, and daylight-saving conversions are not modeled.
+These are bounded checks of looping traces represented by a finite number of states, not proofs for arbitrary sizes or trace lengths.
+
+Obtain the JAR from the [official release](https://github.com/AlloyTools/org.alloytools.alloy/releases/tag/v6.2.0)
+and run from the repository root. Java and Python 3 are required.
 
 ```sh
 python3 model/check.py /path/to/org.alloytools.alloy.dist.jar
 ```
 
-スクリプトは全コマンドを実行し、`expect` とSAT／UNSATの一致を確認する。
-終了コードだけに依存せずreceiptのコマンド数と解の有無を照合する。
-出力先は毎回新しい一時ディレクトリで、receipt.jsonと可視化用XMLを残す。
-個別に実行する場合（出力先は未使用のディレクトリを指定）：
+The script compares each command's SAT/UNSAT result with `expect` and checks for missing commands.
+Each run writes to a fresh temporary directory, retaining receipt.json and XML traces for visualization.
+To execute one model, specify an unused output directory:
 
 ```sh
-java -jar /path/to/org.alloytools.alloy.dist.jar exec -c '*' -t xml -o /tmp/glypha-scheduler-check model/scheduler.als
+java -jar /path/to/org.alloytools.alloy.dist.jar exec -c '*' -t xml -o /tmp/glypha-lifecycle-check model/lifecycle.als
 ```
 
-GUIでは各 `.als` を開き、Executeでコマンドを選ぶ。`expect 0` のcheckで反例が出た場合は要調査。
-`expect 1` のcheckの反例は設計上の問いを示す期待結果。runがUNSATなら想定したシナリオに到達できていない。
-時間演算子とループトレースの意味は [Alloy 6公式説明](https://alloytools.org/alloy6.html) を参照。
+In the GUI, open an `.als` file and choose a command under Execute. A counterexample for a check with `expect 0` requires investigation.
+For a check with `expect 1`, a counterexample is the expected result. An UNSAT run means the intended scenario is unreachable.
+See the [official Alloy 6 overview](https://alloytools.org/alloy6.html) for temporal operators and looping-trace semantics.

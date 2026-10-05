@@ -14,12 +14,8 @@ fact TimeDomain {
   always (Scheduler.now >= 0 and Scheduler.now <= 30)
 }
 fun due: set Entry { { e: Scheduler.pending | e.start <= Scheduler.now } }
-fun matching: set Entry {
-  // Candidate policy: [start, start+10), never early; upper boundary excluded.
-  { e: due | Scheduler.now < add[e.start, 10] }
-}
 fun winner: set Entry {
-  { e: matching | no later: matching | later.start > e.start }
+  { e: due | no later: due | later.start > e.start }
 }
 pred init {
   Scheduler.now = 0
@@ -38,7 +34,6 @@ pred generate {
     no Scheduler.pending
     some batch
     batch in Entry - Scheduler.issued
-    all e: batch | e.start >= Scheduler.now
     // Frontier survives clock rollback; never regenerate a historical interval.
     all e: batch, old: Scheduler.issued | e.start > old.start
     Scheduler.issued' = Scheduler.issued + batch
@@ -80,22 +75,23 @@ assert NoHistoricalRegeneration {
   always (all e: Scheduler.issued' - Scheduler.issued, old: Scheduler.issued |
     e.start > old.start)
 }
-// Deliberately false hypothesis: a missed window need not update target.
-assert EveryDuePollChangesTarget {
+// Catch up even when the original ten-second window was missed.
+assert EveryDuePollHasTarget {
   always ((poll and some due and no Scheduler.target) implies some Scheduler.target')
 }
 pred RollbackAfterConsumption {
   eventually (some Scheduler.consumed and Scheduler.now' < Scheduler.now)
 }
-pred MissWindow {
-  eventually (some due and no matching and poll and no Scheduler.target')
+pred CatchUpAfterGap {
+  eventually (some e: winner | Scheduler.now >= add[e.start, 10]
+    and poll and Scheduler.target' = e.ast)
 }
-pred OverlappingWindows {
-  eventually (#matching > 1 and poll)
+pred SkipIntermediate {
+  eventually (#due > 1 and poll and Scheduler.target' = winner.ast)
 }
-pred ExactUpperBoundary {
-  eventually (some e: Scheduler.pending |
-    Scheduler.now = add[e.start, 10] and e not in matching and poll)
+pred RefillPastDue {
+  eventually (no Scheduler.pending and some Scheduler.consumed
+    and generate and after (some due and poll))
 }
 pred ExhaustAndRefill {
   eventually (some Scheduler.consumed and no Scheduler.pending
@@ -111,10 +107,10 @@ check SingleWinner for 4 but 6 Int, 1..8 steps expect 0
 check NoEarlyTransition for 4 but 6 Int, 1..8 steps expect 0
 check PollDrainsObsolete for 4 but 6 Int, 1..8 steps expect 0
 check NoHistoricalRegeneration for 4 but 6 Int, 1..8 steps expect 0
-check EveryDuePollChangesTarget for 3 but 6 Int, 1..6 steps expect 1
+check EveryDuePollHasTarget for 3 but 6 Int, 1..6 steps expect 0
 run RollbackAfterConsumption for 3 but 6 Int, 1..8 steps expect 1
-run MissWindow for 3 but 6 Int, 1..6 steps expect 1
-run OverlappingWindows for 3 but 6 Int, 1..6 steps expect 1
-run ExactUpperBoundary for 3 but 6 Int, 1..6 steps expect 1
+run CatchUpAfterGap for 3 but 6 Int, 1..6 steps expect 1
+run SkipIntermediate for 3 but 6 Int, 1..6 steps expect 1
+run RefillPastDue for 3 but 6 Int, 1..8 steps expect 1
 run ExhaustAndRefill for 3 but 6 Int, 1..8 steps expect 1
 run StoppedClockProgress for 3 but 6 Int, 1..6 steps expect 1

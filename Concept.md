@@ -251,7 +251,9 @@ old valid content
 
 The system must never expose partially updated content.
 
-After successful replacement, previous content may be discarded.
+Acceptance also requires that a scene applicable at publication time can be determined. The current package, its schedule, and its initial display target are published together. Validation failure leaves all three unchanged.
+
+After successful replacement, previous content may be discarded once any ongoing transfer no longer depends on it. The renderer owns the assets needed by its displayed scene.
 
 If history or version management is required, it belongs outside Glypha. Git or another external tool may be used for that purpose.
 
@@ -322,15 +324,15 @@ This makes behavior deterministic enough to test and model without depending on 
 
 ## 9. Schedule Matching
 
-When the renderer asks the server for content, the server obtains the current time from the Clock and compares it with pending schedule entries.
+When the renderer asks for content, the server samples the Clock at second-level precision.
 
-A schedule transition has a small matching window, initially expected to be approximately ten seconds.
+Among unconsumed schedule entries whose start time is at or before that time, the server selects the latest one. Earlier due entries are skipped and consumed together with the selected entry.
 
-The exact matching semantics are part of the scheduling model and should be validated before implementation.
+There is no matching-window expiry. A delayed request or a forward clock jump must still catch up to the latest applicable unconsumed scene. If the generated period has been exhausted, schedule generation must account for the elapsed interval before selecting that scene.
 
-When a matching schedule entry is found, its AST can be returned to the renderer.
+If no unconsumed entry is due, the current display target remains unchanged. Moving the clock backward does not restore consumed entries.
 
-When time advances, obsolete schedule entries are discarded while searching for the next relevant transition.
+The server retains the current target AST so that the renderer can retrieve it again after a lost response. Consuming a schedule entry does not mean that the renderer has received or displayed it.
 
 ---
 
@@ -363,7 +365,7 @@ If A and B have already been consumed and the clock later moves backward, those 
 
 A clock rollback is not a replay command.
 
-Previously consumed schedule entries remain consumed.
+Previously consumed schedule entries remain consumed, including across server restarts. The server durably preserves the consumption boundary and current display target together with the current content generation.
 
 Conceptually:
 
@@ -432,6 +434,10 @@ Displaying
 ```
 
 A display should change only when a new valid AST can be successfully rendered.
+
+The renderer obtains all referenced assets and completes rendering preparation before atomically replacing the visible scene. It retains the resources needed by the last successful scene independently of the server's current package.
+
+Acquisition and rendering are serialized. A valid response from an earlier server state may temporarily be displayed; subsequent retrieval converges to the current target when communication and rendering succeed and that target remains stable.
 
 Failures should not replace working content.
 
@@ -638,7 +644,7 @@ normal progression
 clock stopped
 clock moved backward
 clock jumped forward
-request missed a transition window
+request delayed past one or more transitions
 schedule exhausted
 server unavailable
 invalid AST received
