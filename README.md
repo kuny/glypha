@@ -1,5 +1,8 @@
 # Glypha
 
+> "Stand out of my sun."\
+> — Diogenes
+
 A small digital signage system built around retaining the last successful scene.
 The server is written in Go; the browser renderer uses PixiJS 8 and TypeScript.
 All documentation and source comments are written in English.
@@ -130,6 +133,10 @@ Dependencies are pinned in `renderer/package.json` and its lockfile. The Docker 
 Builtin uses the locally bundled Noto Sans JP at Regular (400). PixiJS waits for the face to load before measuring or rendering text; the HTML startup scene remains available if font loading fails. Font bytes, version, selected variation, checksum, and license are recorded in [font provenance](renderer/public/fonts/noto-sans-jp/PROVENANCE.txt). The compiler verifies the font checksum, glyph coverage, and shaped ink bounds. The browser checks its actual ink bounds before display; browser rasterization differences can still reject a candidate.
 Errors are logged to the server or browser console and never replace the active scene.
 
+## Operations and completion
+
+See [operations](ops/README.md) for startup, updates, health recovery, offline backup, and restoration. [Initial implementation status](RELEASE_STATUS.md) separates completed software checks from the deferred appliance trial. CI adoption is deferred; no GitHub Actions workflow is enabled. Run the documented Docker, browser, and Alloy checks locally.
+
 ## Design and models
 
 - [Concept](Concept.md)
@@ -138,3 +145,8 @@ Errors are logged to the server or browser console and never replace the active 
 - [Alloy models and verification](model/README.md)
 
 The backend is now selected as browser-based PixiJS. Noto Sans JP Regular (400) is the selected font. Target-device memory/performance trials and broader browser fault-injection coverage remain follow-up work.
+
+## License
+
+Glypha is licensed under the [MIT License](LICENSE).
+The bundled Noto Sans JP font remains under the [SIL Open Font License 1.1](renderer/public/fonts/noto-sans-jp/OFL.txt). Third-party dependencies retain their respective licenses.

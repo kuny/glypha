@@ -1,0 +1,10 @@
+# Merge after compose.yml to use a separately restored volume.
+services:
+  glypha:
+    volumes:
+      - restored-data:/data
+
+volumes:
+  restored-data:
+    external: true
+    name: ${GLYPHA_RESTORE_VOLUME:?Set GLYPHA_RESTORE_VOLUME to the restored volume name}

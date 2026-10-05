@@ -25,6 +25,7 @@ RUN go test ./... && CGO_ENABLED=0 go build -trimpath -o /out/glypha ./cmd/glyph
 RUN mkdir /data && chown 65532:65532 /data
 
 FROM scratch AS runtime
+COPY LICENSE /LICENSE
 COPY --from=server-build /out/glypha /glypha
 COPY --from=renderer-build /app/renderer/dist /web
 COPY --from=server-build --chown=65532:65532 /data /data

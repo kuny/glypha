@@ -6,3 +6,4 @@ design
 *.md
 .DS_Store
 data/
+backups/

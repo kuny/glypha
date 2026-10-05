@@ -4,3 +4,4 @@ renderer/dist/
 .env
 *.log
 data/
+backups/
