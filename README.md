@@ -5,7 +5,6 @@
 
 A small digital signage system built around retaining the last successful scene.
 The server is written in Go; the browser renderer uses PixiJS 8 and TypeScript.
-All documentation and source comments are written in English.
 
 ## Current implementation
 
