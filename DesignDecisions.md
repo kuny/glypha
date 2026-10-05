@@ -64,3 +64,5 @@ Use these decisions to design the content format, schedule generation rules, per
 snapshots and asset transfer, HTTP API, and renderer loop including retries.
 Map atomic Alloy operations to implementation transactions and publication boundaries.
 See [model/README.md](model/README.md) for verification scopes and abstraction limits.
+
+The proposed implementation design is indexed in [design/README.md](design/README.md).

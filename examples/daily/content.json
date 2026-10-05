@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "canvas": { "width": 1920, "height": 1080 },
+  "schedule": {
+    "utcOffset": "+09:00",
+    "defaultScene": "closed",
+    "daily": [
+      { "at": "10:00:00", "scene": "open" },
+      { "at": "13:00:00", "scene": "afternoon" },
+      { "at": "18:00:00", "scene": "closed" }
+    ]
+  },
+  "scenes": {
+    "closed": {
+      "background": { "color": "#182028" },
+      "elements": [
+        { "type": "text", "x": 100, "y": 100, "width": 1720, "height": 160, "text": "See you at 10:00", "fontSize": 72, "color": "#FFFFFF", "align": "left" }
+      ]
+    },
+    "open": {
+      "background": { "color": "#183828" },
+      "elements": [
+        { "type": "text", "x": 100, "y": 100, "width": 1720, "height": 160, "text": "Welcome", "fontSize": 72, "color": "#FFFFFF", "align": "left" }
+      ]
+    },
+    "afternoon": {
+      "background": { "color": "#283848" },
+      "elements": [
+        { "type": "text", "x": 100, "y": 100, "width": 1720, "height": 160, "text": "Good afternoon", "fontSize": 72, "color": "#FFFFFF", "align": "left" }
+      ]
+    }
+  }
+}
