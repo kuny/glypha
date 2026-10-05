@@ -1,0 +1,29 @@
+services:
+  server:
+    build:
+      context: .
+      target: server-dev
+    volumes:
+      - .:/app
+      - go-cache:/root/.cache/go-build
+    ports:
+      - "127.0.0.1:8080:8080"
+    init: true
+  renderer:
+    build:
+      context: .
+      target: renderer-dev
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      GLYPHA_API_URL: http://server:8080
+    volumes:
+      - ./renderer:/app/renderer
+      - renderer-modules:/app/renderer/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - server
+    init: true
+volumes:
+  go-cache:
+  renderer-modules:

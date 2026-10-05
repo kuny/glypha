@@ -87,4 +87,4 @@ Daily scheduling and the six behavioral decisions are accepted. The following co
 - Builtin on renderer process restart, with durable replay protection provided by the server.
 - The resource caps and poll/retry defaults.
 
-The target OS/window system, renderer backend, bundled font, and SQLite driver remain implementation selections. None is required to understand or verify the accepted behavioral contracts, but backend/font selection is required before finalizing exact text-layout validation.
+The renderer backend is now selected as browser-based PixiJS. The target browser environment, bundled font, and SQLite driver remain implementation selections. None is required to understand or verify the accepted behavioral contracts, but backend/font selection is required before finalizing exact text-layout validation.

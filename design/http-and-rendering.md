@@ -112,7 +112,7 @@ If a platform API cannot provide that guarantee, adapt it with an offscreen surf
 A renderer process crash, display disconnect, or loss of power is not an atomic-swap failure and is outside the uninterrupted-display guarantee.
 
 The physical output preserves logical canvas aspect ratio, centers it, and fills unused area with black. It does not reflow text based on physical resolution.
-The backend and bundled font are a platform decision that must be settled before implementing layout validation and presentation.
+The backend is browser-based PixiJS. The bundled font and shared text-layout rules must still be selected before implementing layout validation and presentation.
 
 ## Deployment boundary
 

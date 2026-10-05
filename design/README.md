@@ -35,7 +35,7 @@ One server instance owns one current package for one display profile. Multiple r
 
 There is no administrative application, content history, rollback interface, event queue service, or push-notification subsystem. Polling drives schedule advancement, so no renderer means no display-driven timer work. A later request catches up.
 
-The initial design intentionally separates the portable renderer state machine from its platform-specific drawing backend. The deployment OS, window system, and concrete graphics library remain platform choices. They must provide the preparation and frame-swap contract before an implementation can claim the display invariants.
+The selected renderer backend is browser-based PixiJS, developed with TypeScript and Vite. Docker runs the Go server and serves the renderer assets; the viewing browser performs graphics rendering. The backend must provide the preparation and frame-swap contract before an implementation can claim the display invariants. The bundled font and exact text-layout compatibility remain to be selected.
 
 ## Proposed operational defaults
 
