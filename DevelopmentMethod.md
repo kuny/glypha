@@ -72,9 +72,7 @@ Refined Model
 
 ## The Repository as Context
 
-The development process should not depend on preserving a particular AI conversation.
-
-The repository contains the context required to continue development:
+The repository records the main artifacts produced during development:
 
 - concept
 - invariants
@@ -83,20 +81,14 @@ The repository contains the context required to continue development:
 - source code
 - tests
 
-An AI should be able to enter the project by reading these artifacts rather than inheriting the entire conversation that produced them.
+These artifacts provide a starting point for understanding the project and continuing work. Keeping them up to date can reduce reliance on the original AI conversation.
 
-This also means that the AI itself is replaceable.
-
-Different models or agents may perform different parts of the development process as long as they work from the same explicit constraints.
+Some reasoning, assumptions, and discussion may still need to be recovered from the conversation or clarified with the human. A handover to another model or agent would need to be evaluated in practice.
 
 ## Principle
 
-The objective is not to write increasingly detailed prompts that tell an AI how to implement the system.
+The aim is to make intent, constraints, and decisions explicit enough to support implementation and review.
 
-The objective is to make the system's intent and constraints precise enough that implementation becomes a replaceable activity.
+AI chat helped develop the concept, explore alternatives, and turn agreed decisions into code and tests. Human review, formal models, and implementation tests each contributed to checking that work within their respective limits.
 
-In short:
-
-> **Humans own intent and invariants.  
-> AI explores and implements.  
-> Formal models challenge both.**
+This describes the process used for Glypha. Its effectiveness in other projects or with different AI tools remains to be evaluated.
