@@ -10,8 +10,8 @@ Status: Acceptance criteria and implementation evidence. Content compilation, SQ
 | `NoMixedPackage`, `CoherentGeneration` | One database transaction plus state mutex | Concurrent retrieval/publication returns a complete old or new snapshot |
 | `NoDanglingAsset`, `ResponseOwnsAssets` | AST compilation and complete response envelope | Missing assets fail validation; old envelopes survive package replacement |
 | `NoReplay`, `DurableNoReplay` | Generation-local durable cursor | Backward time and server restart never resurrect consumed occurrences |
-| `EveryDuePollHasTarget`, `CatchUpLatest` | `LatestBetween` and finite cache | Delayed requests select the latest due occurrence, including gaps beyond the cache |
-| `NoHistoricalRegeneration` | Cache reconstructed after the durable cursor | Restart and rollback do not regenerate an already consumed occurrence |
+| `EveryDuePollHasTarget`, `CatchUpLatest` | `LatestBetween` over the daily template | Delayed requests select the latest due occurrence, including gaps beyond the cache |
+| `NoHistoricalRegeneration` | Direct lookup strictly after the durable cursor | Restart and rollback do not regenerate an already consumed occurrence |
 | `DisplayOwnsAssets`, `FailurePreservesScene` | Candidate resource set and atomic presentation | Failures at acquisition, decode, layout, and swap preserve the active scene |
 | `DeliveryWithRecovery` | Serial polling and retry loop | Stable target eventually displays when fetch and rendering repeatedly succeed |
 
@@ -93,4 +93,14 @@ The renderer backend is now selected as browser-based PixiJS. Noto Sans JP Regul
 
 Automated tests cover font coverage and fitting, empty text round-trips, canonical restore, daily catch-up, rollback across restart, same-scene cursor persistence, immutable old snapshots, rejected uploads, conditional responses, failed writes, and commit-error fail-closed behavior. A subprocess exits without closing SQLite before commit and after publication; reopening verifies old or committed state respectively. These tests do not simulate device power loss or every instruction boundary.
 
-The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. The production storage trial used a host bind mount because the Docker VM disk was full; named-volume deployment still requires free space. Further work includes concurrent slow-client stress, failures at every renderer staging boundary, transaction kill hooks at every point listed above, and memory/performance measurements on the target appliance. Model checks remain separate evidence, not a proof of the Go or browser implementation.
+The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. After clearing Docker build caches, the same upload/restart/conditional-response trial also passed with the production Compose named volume. Further work includes real-socket slow-client stress, failures at every renderer staging boundary, transaction kill hooks at every point listed above, and memory/performance measurements on the target appliance. Model checks remain separate evidence, not a proof of the Go or browser implementation.
+
+### Deterministic HTTP integration coverage
+
+`internal/httpserver/integration_test.go` exercises the real handlers, compiler, and SQLite store with controlled I/O boundaries:
+
+- Two display responses pause at their first body write. A third receives `503` with `Retry-After`, while a replacement upload commits successfully. Released old responses retain their original generation and image pixels; the next response contains the new generation. Asset SHA-256 hashes and response ETags are checked against the actual bytes.
+- An upload pauses while reading its multipart body. Another upload receives `503`, while display retrieval continues. Injecting an unexpected EOF returns `400` without changing the current envelope, and a subsequent upload succeeds.
+- A conditional request at an exact daily transition returns `304` only after committing the new target. Reopening SQLite with a backward clock retains that target. The next midnight restores the default scene.
+
+These tests use channel gates rather than elapsed sleeps. They pass under the Go race detector. They verify handler-level ownership and admission behavior; operating-system socket backpressure and target-device throughput remain separate acceptance work.
