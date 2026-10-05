@@ -5,7 +5,12 @@ services:
       target: runtime
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - content-data:/data
     read_only: true
     tmpfs:
       - /tmp
     init: true
+
+volumes:
+  content-data:

@@ -1,6 +1,6 @@
 # Glypha Implementation Design
 
-Status: Draft for review. The six behavioral decisions in [DesignDecisions.md](../DesignDecisions.md) are accepted; concrete mechanisms proposed here are design choices, not implemented features.
+Status: The six [behavioral decisions](../DesignDecisions.md) are accepted. The initial content-to-display implementation exists; the verification document distinguishes completed checks from further acceptance work.
 All repository documentation and source comments are written in English.
 
 The design keeps two components: a Go server and a renderer. SQLite is embedded server storage, not another service. The server publishes immutable content snapshots. The renderer owns its displayed resources and replaces the visible frame only after a complete successful preparation.
@@ -35,9 +35,9 @@ One server instance owns one current package for one display profile. Multiple r
 
 There is no administrative application, content history, rollback interface, event queue service, or push-notification subsystem. Polling drives schedule advancement, so no renderer means no display-driven timer work. A later request catches up.
 
-The selected renderer backend is browser-based PixiJS, developed with TypeScript and Vite. Docker runs the Go server and serves the renderer assets; the viewing browser performs graphics rendering. The backend must provide the preparation and frame-swap contract before an implementation can claim the display invariants. The bundled font is Noto Sans JP Regular (400). Exact server/browser text-layout compatibility remains to be implemented.
+The selected renderer backend is browser-based PixiJS, developed with TypeScript and Vite. Docker runs the Go server and serves the renderer assets; the viewing browser performs graphics rendering. The backend must provide the preparation and frame-swap contract before an implementation can claim the display invariants. The bundled font is Noto Sans JP Regular (400). Server shaping and browser ink measurement use the same pinned font; browser preparation remains the final layout check.
 
-## Proposed operational defaults
+## Operational defaults
 
 These values bound initial resource use; they are not product features or additional guarantees.
 
@@ -51,6 +51,7 @@ These values bound initial resource use; they are not product features or additi
 | Content JSON | At most 1 MiB |
 | Entire upload | At most 32 MiB |
 | Decoded image pixels per package | At most 32 million in total |
+| Text font size / Unicode code points per element | At most 4096 / 16384 |
 | Scenes / elements per scene | At most 64 / 128 |
 | Response envelope | At most 48 MiB including base64 assets |
 

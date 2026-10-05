@@ -1,12 +1,12 @@
 # Content and Scheduling
 
-Status: Proposed content format and scheduling algorithm. Daily time-of-day scheduling is the selected initial use case.
+Status: Implemented content format and scheduling core. Daily time-of-day scheduling is the selected initial use case.
 
 ## Package format
 
 A package consists of one JSON document and its referenced static image files.
 [The daily example](../examples/daily/content.json) requires no assets and illustrates the complete proposed input shape.
-It is also a fixture for the implemented structural content validator. Font metrics and AST compilation are still pending; passing this validator alone does not establish publication readiness.
+It is also an uploadable fixture for validation, compilation, and daily scheduling tests.
 
 Required document fields:
 
@@ -43,7 +43,7 @@ A scene contains `background` and an ordered `elements` array. Draw the backgrou
 Rectangles have nonnegative origins, positive dimensions, and must lie inside the logical canvas. Reject arithmetic overflow.
 Text is plain text, has no markup, and uses the bundled font for the rendering profile. Newlines create explicit lines; there is no automatic wrapping or shrink-to-fit in format 1.
 Use a line height of 1.2 times the font size, top alignment, and the selected backend's shared font metrics. If glyphs or the measured text do not fit, reject rather than silently substitute or clip.
-The selected drawing backend is PixiJS and the bundled font is Noto Sans JP Regular (400). Server compilation and renderer preparation must share the pinned font bytes, the wght=400 instance, layout rules, and profile identifier `noto-sans-jp-2.004-regular-400-v1`. See [font provenance](../renderer/public/fonts/noto-sans-jp/PROVENANCE.txt) for the source, checksum, and license. Browser startup now waits for this local font before constructing PixiJS text; server-side glyph coverage and layout validation are not implemented yet.
+The selected drawing backend is PixiJS and the bundled font is Noto Sans JP Regular (400). Server compilation and renderer preparation must share the pinned font bytes, the wght=400 instance, layout rules, and profile identifier `noto-sans-jp-2.004-regular-400-v1`. See [font provenance](../renderer/public/fonts/noto-sans-jp/PROVENANCE.txt) for the source, checksum, and license. The compiler checks glyph coverage and shapes text with go-text/typesetting at weight 400. Browser startup waits for the same local font. Candidate text is measured and rasterized with Canvas 2D, then drawn as PixiJS textures. Each line places the top of its ink at the line origin, advances by 1.2 times font size, and aligns the union of advance and ink bounds. Transparent texture padding preserves edge antialiasing. Browser ink measurement is the final fit check; exact rasterization equality across engines is not assumed. Text is limited to font size 4096 and 16384 Unicode code points per element.
 
 Accept static PNG and JPEG assets. Verify media type by decoding the bytes, not by trusting filenames or request headers.
 Reject animation, external URLs, uploaded fonts, and unsupported formats. Check decoded dimensions and aggregate pixel limits before allocating full image buffers where possible.
@@ -134,13 +134,13 @@ The last behavior follows the accepted no-replay policy. A corrected clock is no
 `internal/content.Validate` accepts document bytes, an asset map, and configured canvas dimensions.
 It returns either a `Validated` document with an immutable daily template, or structured issues containing JSON Pointer paths, stable codes, and messages.
 It rejects duplicate/unknown keys, absent/null required fields, malformed types, reference errors, invalid rectangles, resource-limit violations, and unsupported or undecodable images.
-Asset-map construction must reject duplicate uploaded filenames in the future multipart adapter; a Go map cannot represent duplicate filenames.
+The multipart adapter rejects duplicate uploaded filenames before constructing the asset map.
 Package byte limits here include JSON and image bytes; the HTTP adapter must additionally limit the complete multipart request.
 
-`Validated` deliberately does not include a render-ready AST or a publication method. Exact glyph coverage and text fitting must be implemented against the selected Noto Sans JP Regular (400) font and shared layout rules before publication can be implemented.
+`Validated` deliberately does not include a render-ready AST or a publication method. `internal/compiler` checks glyph coverage and text fitting and constructs an immutable candidate. AST version 1 contains `version`, `profile`, `canvas`, `background`, and `elements`; its drawing element fields match format 1.
 
 `internal/schedule.Daily` exposes `ApplicableAt`, `LatestBetween`, and `Generate`. It has no I/O, Clock reads, mutable consumption state, or cache.
 The caller supplies integer Unix seconds and a persisted cursor. The API supports request/cursor timestamps from 0001-01-01 UTC through 9999-12-31 UTC and returns `ErrTimeRange` outside that interval.
 An applicable occurrence may precede the lower input boundary by less than a day because local midnight can precede UTC midnight; publication still initializes its cursor to the valid input timestamp.
 `Generate` accepts an interval of at most 86400 seconds and returns at most 65 occurrences. Longer gaps use `LatestBetween` without materializing intervening days.
-Durable cursor updates, cache installation after commit, and Clock sampling remain service-layer work.
+`internal/store` owns durable cursor updates and Clock sampling. It uses direct lookup without a materialized pending cache; the cache algorithm above documents an optional refinement.

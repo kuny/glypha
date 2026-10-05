@@ -1,7 +1,10 @@
 // Package content validates format-1 packages without publishing them.
 package content
 
-import "github.com/kuny/glypha/internal/schedule"
+import (
+	"encoding/json"
+	"github.com/kuny/glypha/internal/schedule"
+)
 
 const MaxDocumentBytes = 1 << 20
 const MaxPackageBytes = 32 << 20
@@ -51,8 +54,29 @@ type Issue struct {
 }
 
 // Validated describes structurally valid content, not a compiled or publishable AST.
-// Exact font metrics, glyph coverage, and renderer-profile validation are a later stage.
+// Exact font metrics, glyph coverage, and renderer-profile validation are checked by the compiler.
 type Validated struct {
 	Document Document
 	Schedule *schedule.Daily
+}
+
+// MarshalJSON preserves the required text field even for an empty string.
+func (e Element) MarshalJSON() ([]byte, error) {
+	var text *string
+	if e.Type == "text" {
+		text = &e.Text
+	}
+	return json.Marshal(struct {
+		Type     string  `json:"type"`
+		X        int64   `json:"x"`
+		Y        int64   `json:"y"`
+		Width    int64   `json:"width"`
+		Height   int64   `json:"height"`
+		Text     *string `json:"text,omitempty"`
+		FontSize int64   `json:"fontSize,omitempty"`
+		Color    string  `json:"color,omitempty"`
+		Align    string  `json:"align,omitempty"`
+		Asset    string  `json:"asset,omitempty"`
+		Fit      string  `json:"fit,omitempty"`
+	}{e.Type, e.X, e.Y, e.Width, e.Height, text, e.FontSize, e.Color, e.Align, e.Asset, e.Fit})
 }

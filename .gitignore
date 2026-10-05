@@ -3,3 +3,4 @@ renderer/node_modules/
 renderer/dist/
 .env
 *.log
+data/

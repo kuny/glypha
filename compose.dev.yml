@@ -6,6 +6,10 @@ services:
     volumes:
       - .:/app
       - go-cache:/root/.cache/go-build
+      - go-modules:/go/pkg/mod
+      - server-data:/data
+    environment:
+      GLYPHA_DB_PATH: /data/glypha.db
     ports:
       - "127.0.0.1:8080:8080"
     init: true
@@ -27,3 +31,5 @@ services:
 volumes:
   go-cache:
   renderer-modules:
+  go-modules:
+  server-data:

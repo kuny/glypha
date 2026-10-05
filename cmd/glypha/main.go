@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/kuny/glypha/internal/compiler"
+	"github.com/kuny/glypha/internal/content"
+	"github.com/kuny/glypha/internal/store"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -41,8 +45,29 @@ func run() error {
 	if assets == "" {
 		assets = "renderer/dist"
 	}
+
+	fontPath := os.Getenv("GLYPHA_FONT_PATH")
+	if fontPath == "" {
+		fontPath = "renderer/public/fonts/noto-sans-jp/NotoSansJP.ttf"
+	}
+	compiler, err := compiler.New(fontPath, content.Canvas{Width: 1920, Height: 1080})
+	if err != nil {
+		return err
+	}
+	database := os.Getenv("GLYPHA_DB_PATH")
+	if database == "" {
+		database = "data/glypha.db"
+	}
+	if err := os.MkdirAll(filepath.Dir(database), 0700); err != nil {
+		return err
+	}
+	state, err := store.Open(database, compiler, store.SystemClock{})
+	if err != nil {
+		return err
+	}
+	defer state.Close()
 	server := &http.Server{
-		Addr: address, Handler: httpserver.New(os.DirFS(assets)),
+		Addr: address, Handler: httpserver.New(os.DirFS(assets), httpserver.NewAPI(compiler, state)),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

@@ -1,6 +1,6 @@
 # Verification and Implementation Order
 
-Status: Implementation acceptance criteria. The Docker/Go/PixiJS bootstrap and pure content/scheduling core exist. Publication, durable state, and arbitrary AST rendering remain pending.
+Status: Acceptance criteria and implementation evidence. Content compilation, SQLite publication, HTTP snapshots, and PixiJS scene rendering are implemented.
 
 ## Traceability to the models
 
@@ -15,7 +15,7 @@ Status: Implementation acceptance criteria. The Docker/Go/PixiJS bootstrap and p
 | `DisplayOwnsAssets`, `FailurePreservesScene` | Candidate resource set and atomic presentation | Failures at acquisition, decode, layout, and swap preserve the active scene |
 | `DeliveryWithRecovery` | Serial polling and retry loop | Stable target eventually displays when fetch and rendering repeatedly succeed |
 
-The Alloy lifecycle model assumes atomic durable updates and atomic complete-snapshot acquisition. SQLite transactions and response snapshot ownership are proposed implementations of those assumptions, not consequences proven by Alloy.
+The Alloy lifecycle model assumes atomic durable updates and atomic complete-snapshot acquisition. SQLite transactions and response snapshot ownership are implementations of those assumptions, not consequences proven by Alloy.
 The concrete cursor compresses consumed history, the generator expands daily recurrence, and the renderer uses a platform graphics API. These refinements require implementation checks in addition to the existing 41 Alloy commands.
 
 ## Scheduling checks
@@ -87,4 +87,10 @@ Daily scheduling and the six behavioral decisions are accepted. The following co
 - Builtin on renderer process restart, with durable replay protection provided by the server.
 - The resource caps and poll/retry defaults.
 
-The renderer backend is now selected as browser-based PixiJS. Noto Sans JP Regular (400) is the selected bundled font. The target browser environment and SQLite driver remain implementation selections. None is required to understand or verify the accepted behavioral contracts, but exact server/browser text-layout agreement still requires implementation verification.
+The renderer backend is now selected as browser-based PixiJS. Noto Sans JP Regular (400) is the selected bundled font. The SQLite driver is modernc.org/sqlite v1.60.1; target-browser qualification remains deployment work. None is required to understand or verify the accepted behavioral contracts, but exact server/browser text-layout agreement still requires implementation verification.
+
+## Current evidence and remaining checks
+
+Automated tests cover font coverage and fitting, empty text round-trips, canonical restore, daily catch-up, rollback across restart, same-scene cursor persistence, immutable old snapshots, rejected uploads, conditional responses, failed writes, and commit-error fail-closed behavior. A subprocess exits without closing SQLite before commit and after publication; reopening verifies old or committed state respectively. These tests do not simulate device power loss or every instruction boundary.
+
+The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. The production storage trial used a host bind mount because the Docker VM disk was full; named-volume deployment still requires free space. Further work includes concurrent slow-client stress, failures at every renderer staging boundary, transaction kill hooks at every point listed above, and memory/performance measurements on the target appliance. Model checks remain separate evidence, not a proof of the Go or browser implementation.

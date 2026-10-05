@@ -12,7 +12,7 @@ func TestBootstrapRoutes(t *testing.T) {
 	handler := New(fstest.MapFS{
 		"index.html":    {Data: []byte("<title>Glypha</title>")},
 		"assets/app.js": {Data: []byte("export {};")},
-	})
+	}, nil)
 	for _, tc := range []struct {
 		method, path string
 		status       int

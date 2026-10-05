@@ -5,3 +5,4 @@ model
 design
 *.md
 .DS_Store
+data/

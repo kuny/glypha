@@ -1,6 +1,6 @@
 # Server and Persistence
 
-Status: Proposed implementation of the [accepted decisions](../DesignDecisions.md).
+Status: Initial implementation of the [accepted decisions](../DesignDecisions.md).
 
 ## Ownership
 
@@ -19,21 +19,17 @@ Use one application mutex around operations that inspect or mutate the current g
 
 Use a single SQLite database on local storage. Store package metadata, compiled scenes, asset bytes, and scheduling state in that database. This avoids a commit protocol spanning a database and a separately renamed asset directory.
 
-Logical tables:
+Schema version 1 uses one `current` row with singleton key `1`, generation token, canonical package BLOB, `cursor` Unix second, and target scene ID. The BLOB contains normalized source, compiled scenes, and image bytes. This replaces the draft's separate scene and asset tables: a whole-package replacement is the only mutation needed, so one row keeps the transaction and ownership boundary explicit.
 
-| Table | Fields and constraints |
-|---|---|
-| `current` | Singleton key `1`; generation token; normalized source JSON; compiled scheduling rules; `consumed_through` Unix second; target scene ID |
-| `scenes` | Scene ID primary key; compiled AST JSON |
-| `assets` | Asset ID primary key; media type; SHA-256 digest; encoded image bytes |
+JSON-contained references are validated before publication and again at startup. Startup recompiles the stored source and compares the canonical result, rejecting unsupported profiles or inconsistent ASTs. The driver is pinned to `modernc.org/sqlite` v1.60.1, allowing a CGO-free Go binary.
 
-The tables describe only the current package. A target scene must exist in `scenes`; compiled asset references must resolve in `assets`. Enforce database foreign keys where represented relationally and validate JSON-contained references before publication and on loading stored state.
+The design term `consumed_through` corresponds to the `cursor` column below.
 
 `consumed_through` is a generation-local high-water mark: all occurrences at or before it are logically consumed or superseded by initial publication. It is initialized to the publication timestamp. A later catch-up advances it to the latest consumed occurrence, not necessarily to the current Clock sample. When no occurrence is due, there is no scheduling write.
 
-Do not persist all consumed entries. Pending entries and their generation horizon are a reconstructible cache. On restart, rebuild after `consumed_through`; do not rebuild from the current wall clock alone. A finite cache must have an explicit exclusive lower bound and inclusive generated-through bound, even when it contains zero entries.
+Do not persist all consumed entries. The initial service uses direct `LatestBetween` lookup over the bounded daily template, without materializing a pending cache. This also handles long gaps without enumerating intervening days. The standalone `Generate` API remains available; any future finite cache must preserve an exclusive lower bound and inclusive horizon.
 
-SQLite rollback journaling with `journal_mode=DELETE`, `synchronous=EXTRA`, and `foreign_keys=ON` is the initial storage policy. Apply and verify connection settings at startup; do not depend on driver defaults. Choose and pin the Go SQLite driver during implementation after deciding the build and platform constraints.
+SQLite rollback journaling with `journal_mode=DELETE`, `synchronous=EXTRA`, and `foreign_keys=ON` is the initial storage policy. Apply and verify connection settings at startup; do not depend on driver defaults. The selected driver runs with one connection; settings are applied through connection pragmas.
 
 SQLite documents atomic transactions in [Atomic Commit](https://www.sqlite.org/atomiccommit.html). Its [synchronous setting](https://www.sqlite.org/pragma.html#pragma_synchronous) explains the additional directory synchronization provided by EXTRA in DELETE mode. Durability still depends on the filesystem and device honoring synchronization; database corruption and faulty storage remain outside the model.
 
@@ -54,7 +50,7 @@ The publication Clock sample is the logical applicability point, not the time at
 
 1. Acquire a transfer admission slot, then the state mutex.
 2. If there is no package, return the empty-content result.
-3. Sample Clock once. Compute the latest unconsumed due occurrence, extending or rebuilding the finite pending cache as needed. A backward sample never decreases the durable cursor.
+3. Sample Clock once. Compute the latest unconsumed due occurrence directly with `LatestBetween`. A backward sample never decreases the durable cursor.
 4. If an occurrence is due, update target and cursor in one transaction and commit. Persist cursor progress even if the new scene is the same as the previous target scene.
 5. Read the selected AST and all referenced asset bytes from that coherent generation. Build an immutable, bounded response envelope and its ETag while still excluding publication. A cached envelope for the same generation and scene may be reused.
 6. Release database resources and the mutex before writing any network bytes. Apply the request's conditional ETag only after advancement.

@@ -1,6 +1,6 @@
 # HTTP API and Renderer
 
-Status: Proposed protocol version 1. The renderer receives scenes, never schedules.
+Status: Implemented protocol version 1. The renderer receives scenes, never schedules.
 
 ## Endpoints
 
@@ -91,7 +91,7 @@ A `204` retains Builtin or the existing scene and continues polling. It does not
 ## Renderer state machine
 
 The renderer owns two distinct resource sets: the active scene and, during an attempt, a candidate scene.
-Start with the bundled Builtin scene. The proposed initial renderer does not persist active scene resources across its own process restart; it returns to Builtin and retrieves again.
+Start with the bundled Builtin scene. The initial renderer does not persist active scene resources across its own process restart; it returns to Builtin and retrieves again.
 This is separate from the accepted requirement to preserve server consumption across server restart.
 
 For each serial attempt:
@@ -112,7 +112,7 @@ If a platform API cannot provide that guarantee, adapt it with an offscreen surf
 A renderer process crash, display disconnect, or loss of power is not an atomic-swap failure and is outside the uninterrupted-display guarantee.
 
 The physical output preserves logical canvas aspect ratio, centers it, and fills unused area with black. It does not reflow text based on physical resolution.
-The backend is browser-based PixiJS. The bundled font is Noto Sans JP Regular (400). Shared text-layout rules still need implementation and verification before publication can rely on layout validation.
+The backend is browser-based PixiJS. The bundled font is Noto Sans JP Regular (400). Candidate text uses Canvas 2D ink measurements and owned PixiJS textures. Each candidate owns an off-DOM PixiJS Application and canvas, rendered completely before DOM replacement. Old textures, bitmaps, and the application are released after replacement.
 
 ## Deployment boundary
 
