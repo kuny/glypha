@@ -27,8 +27,19 @@ export async function readEnvelope(response: Response): Promise<unknown> {
 }
 export interface Prepared { canvas: HTMLCanvasElement; dispose(): void }
 
+interface ScenePlatform {
+  loadFont: typeof loadDisplayFont;
+  decodeImage(blob: Blob): Promise<ImageBitmap>;
+  createApplication(): Application;
+}
+const defaultPlatform: ScenePlatform = {
+  loadFont: loadDisplayFont,
+  decodeImage: (blob) => createImageBitmap(blob),
+  createApplication: () => new Application(),
+};
+
 // Every candidate has its own off-DOM canvas. Failure never draws over the active canvas.
-export async function prepareScene(input: unknown, signal: AbortSignal): Promise<Prepared> {
+export async function prepareScene(input: unknown, signal: AbortSignal, platform: ScenePlatform = defaultPlatform): Promise<Prepared> {
   const envelope = object(input); const ast = object(envelope.ast);
   if (envelope.protocol !== 1 || ast.version !== 1 || ast.profile !== profile) throw new Error('Unsupported display profile.');
   string(envelope.generation); string(envelope.scene);
@@ -40,9 +51,20 @@ export async function prepareScene(input: unknown, signal: AbortSignal): Promise
   const textures = new Map<string, Texture>(); const bitmaps: ImageBitmap[] = [];
   const textTextures: Texture[] = [];
   let app: Application | undefined;
-  const dispose = () => { app?.destroy(true, { children: true }); app = undefined; for (const texture of textures.values()) texture.destroy(true); textures.clear(); for (const texture of textTextures) texture.destroy(true); textTextures.length = 0; for (const bitmap of bitmaps) bitmap.close(); bitmaps.length = 0; };
+  const dispose = () => {
+    // Application.init can reject before a renderer exists.
+    if (app?.renderer) app.destroy(true, { children: true });
+    else app?.stage.destroy({ children: true });
+    app = undefined;
+    for (const texture of textures.values()) texture.destroy(true);
+    textures.clear();
+    for (const texture of textTextures) texture.destroy(true);
+    textTextures.length = 0;
+    for (const bitmap of bitmaps) bitmap.close();
+    bitmaps.length = 0;
+  };
   try {
-    await loadDisplayFont(); signal.throwIfAborted();
+    signal.throwIfAborted(); await platform.loadFont(); signal.throwIfAborted();
     let bytesTotal = 0, pixelsTotal = 0;
     for (const [id, value] of Object.entries(assets)) {
       const asset = object(value); const media = string(asset.mediaType);
@@ -55,11 +77,11 @@ export async function prepareScene(input: unknown, signal: AbortSignal): Promise
       const [imageWidth, imageHeight] = imageDimensions(bytes, media);
       pixelsTotal += imageWidth * imageHeight;
       if (pixelsTotal > 32_000_000) throw new Error('Decoded images exceed limit.');
-      const bitmap = await createImageBitmap(new Blob([bytes], { type: media })); bitmaps.push(bitmap);
+      const bitmap = await platform.decodeImage(new Blob([bytes], { type: media })); bitmaps.push(bitmap);
       if (bitmap.width !== imageWidth || bitmap.height !== imageHeight) throw new Error('Image dimensions disagree.');
       textures.set(id, Texture.from(bitmap)); signal.throwIfAborted();
     }
-    app = new Application();
+    app = platform.createApplication();
     await app.init({ width, height, background: backgroundColor, antialias: true, autoStart: false, resolution: 1 });
     signal.throwIfAborted();
     const image = (id: unknown, fit: unknown, x: number, y: number, w: number, h: number) => {

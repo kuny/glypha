@@ -93,7 +93,7 @@ The renderer backend is now selected as browser-based PixiJS. Noto Sans JP Regul
 
 Automated tests cover font coverage and fitting, empty text round-trips, canonical restore, daily catch-up, rollback across restart, same-scene cursor persistence, immutable old snapshots, rejected uploads, conditional responses, failed writes, and commit-error fail-closed behavior. A subprocess exits without closing SQLite before commit and after publication; reopening verifies old or committed state respectively. These tests do not simulate device power loss or every instruction boundary.
 
-The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. After clearing Docker build caches, the same upload/restart/conditional-response trial also passed with the production Compose named volume. Further work includes real-socket slow-client stress, failures at every renderer staging boundary, transaction kill hooks at every point listed above, and memory/performance measurements on the target appliance. Model checks remain separate evidence, not a proof of the Go or browser implementation.
+The renderer build performs TypeScript checking. Local browser trials cover the daily example, mixed Japanese/English text with an image, and preservation of that frame while the server is stopped. A read-only, non-root production container accepted an upload and restored the same generation after restart, returning `304` for its ETag. After clearing Docker build caches, the same upload/restart/conditional-response trial also passed with the production Compose named volume. Further work includes real-socket slow-client stress, transaction kill hooks at every point listed above, and target-device qualification. Browser staging failures are now exercised by the development checks described below. Model checks remain separate evidence, not a proof of the Go or browser implementation.
 
 ### Deterministic HTTP integration coverage
 
@@ -104,3 +104,15 @@ The renderer build performs TypeScript checking. Local browser trials cover the 
 - A conditional request at an exact daily transition returns `304` only after committing the new target. Reopening SQLite with a backward clock retains that target. The next midnight restores the default scene.
 
 These tests use channel gates rather than elapsed sleeps. They pass under the Go race detector. They verify handler-level ownership and admission behavior; operating-system socket backpressure and target-device throughput remain separate acceptance work.
+
+### Browser failure checks
+
+`renderer/tests/index.html` runs 23 checks in a local browser using `Display`, `pollDisplay`, and the real PixiJS scene preparer. The test page is served by Vite in development and excluded from the production build. It supplies isolated responses and never changes server content. Start the development environment, open `/tests/`, and select **Run checks**. TypeScript checks compile these sources; browser execution is a separate step.
+
+The suite covers complete frame/ETag replacement before old-frame disposal, failed DOM swaps, abort and shutdown during preparation, serial requests, successful ETag retention after preparation failure, bounded retry delays, unsolicited `304`, malformed JSON/UTF-8, oversized streamed bodies, unsupported profiles, asset digest mismatches, undecodable PNG data, missing references, and overflowing text. It injects font, decode, graphics initialization, and rendering failures. A later valid response must recover successfully.
+
+Actual PixiJS applications, decoded bitmaps, and observed textures are checked for disposal after failures and repeated replacement. These checks verify API-level resource ownership; they do not measure driver memory or establish long-duration GPU stability. Injected faults use explicit platform dependencies instead of changing global browser APIs. The suite identified and fixed cleanup of an Application whose initialization failed before its renderer was created.
+
+### Deferred appliance validation
+
+Target hardware is not currently available. At the user's direction, target-device trials are deferred for this iteration. Long-duration operation, memory/performance measurements, physical-display resolution checks, browser qualification on that device, and device power-loss behavior remain unverified. Local browser checks and Docker integration tests continue independently; deferral does not count as a passing appliance trial.

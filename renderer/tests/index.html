@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glypha renderer checks</title>
+  <style>
+    @font-face { font-family: 'Glypha Noto Sans JP'; src: url('/fonts/noto-sans-jp/NotoSansJP.ttf') format('truetype'); font-weight: 400; font-variation-settings: 'wght' 400; }
+    body { margin: 24px; font: 16px system-ui; color: #e5e7eb; background: #111827; }
+    button { padding: 8px 16px; }
+    #preview { width: min(800px, 100%); aspect-ratio: 16/9; background: black; }
+    canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+    [data-result="pass"] { color: #86efac; } [data-result="fail"] { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <h1>Glypha renderer checks</h1>
+  <p>Development-only checks using isolated responses. No server content is uploaded or changed.</p>
+  <button id="run">Run checks</button>
+  <p id="status" role="status">Ready</p>
+  <ol id="results"></ol>
+  <h2>Last successful test frame</h2>
+  <div id="preview"></div>
+  <script type="module" src="./renderer.ts"></script>
+</body>
+</html>

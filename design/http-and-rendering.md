@@ -119,3 +119,7 @@ The backend is browser-based PixiJS. The bundled font is Noto Sans JP Regular (4
 The initial deployment is a local appliance or trusted network service; bind to loopback by default.
 Expose the listener beyond that boundary only through an explicitly configured deployment policy. Internet authentication, user management, and TLS termination are not added to the Glypha protocol in this design.
 Diagnostics go to process logs. They must never be substituted for display content.
+
+## Browser implementation boundaries
+
+`Display` owns the active frame and successful ETag. It adopts both only after canvas replacement succeeds and disposes the previous frame afterward. Shutdown is idempotent and late preparation cannot resurrect a stopped display. `pollDisplay` owns serial acquisition and retry delays; the request timeout signal also reaches candidate preparation. `prepareScene` owns staging resources and handles initialization failure even when no graphics renderer exists yet. The development browser checks exercise these same production functions.
