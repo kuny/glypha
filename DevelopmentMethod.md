@@ -70,6 +70,28 @@ Decision
 Refined Model
 ```
 
+## Review Between Two AI Roles
+
+After implementation, the human relayed findings between two AI roles: AI 1 evaluated the models, tests, and their correspondence; AI 2 checked those findings against the repository and made corrections or added tests. AI 1 then reviewed the changes, and the cycle continued until the identified issues were resolved.
+
+```text
+AI 1: Evaluate models, tests, and coverage claims
+  ↓
+Human: Relay findings
+  ↓
+AI 2: Check findings, revise documentation, and add tests where useful
+  ↓
+AI 1: Re-evaluate the changes
+  ↓
+Repeat when actionable issues remain
+```
+
+In this review, the correspondence table in `model/README.md` made the claims concrete enough to challenge. AI 2 corrected descriptions that overstated what existing tests observed and added two browser scenarios: rendering an old response after the target changed, then adopting the new target; and recovering from fetch and render failures while the target stayed fixed, then retaining the recovered frame through conditional responses.
+
+AI 1 reported running the browser checks and type checks, and using temporary mutations to assess whether tests detected injected faults. The review also found that the new target-replacement test used identical image assets in both generations. It therefore did not cover the asset-difference condition in Alloy's `ReplaceDuringFetch` scenario. AI 2 removed that citation and documented the limitation; AI 1 reviewed and accepted the correction.
+
+This cycle improved both the test scenarios and the accuracy of the coverage claims. It did not make agreement between AIs a proof of correctness. Finite tests remain observations of selected executions, and Alloy checks remain subject to their modeled assumptions and checked bounds. Some findings required clearer documentation rather than more tests. Target-device trials and CI remained deferred.
+
 ## The Repository as Context
 
 The repository records the main artifacts produced during development:
