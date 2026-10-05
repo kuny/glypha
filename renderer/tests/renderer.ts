@@ -136,6 +136,107 @@ async function run(): Promise<void> {
       assert(host.firstChild === old.canvas && old.disposals === 0 && !display.etag, 'Unsolicited 304 changed state.');
     });
 
+    await check('An old response renders after target replacement, then polling converges', async () => {
+      const old = initial();
+      const a = await envelope('Generation A');
+      const b = await envelope('Generation B');
+      b.ast.background.color = '#283848';
+      let target = a;
+      const entered = gate(), release = gate(), abort = new AbortController();
+      const sent: Array<string | null> = [], errors: unknown[] = [];
+      const prepared: Array<{ generation: string; frame: Prepared; disposals: number }> = [];
+      let waits = 0;
+      display = new Display(host, old, async (input, s) => {
+        const value = input as typeof a;
+        if (value.generation === a.generation) { entered.release(); await release.promise; }
+        const scene = await prepareScene(input, s);
+        const tracked = { generation: value.generation, frame: scene, disposals: 0 };
+        prepared.push(tracked);
+        return { canvas: scene.canvas, dispose() { tracked.disposals++; scene.dispose(); } };
+      });
+      const task = pollDisplay(display, abort.signal, {
+        // Serializing now freezes the fetched generation even if target changes later.
+        fetch: async (_input, init) => {
+          sent.push(new Headers(init?.headers).get('If-None-Match'));
+          return response(target, target.generation);
+        },
+        wait: async () => {
+          waits++;
+          assert(errors.length === 0, 'Unexpected acquisition or preparation failure.');
+          if (waits === 1) {
+            assert(target === b && prepared[0].generation === a.generation, 'Target did not advance ahead of the response.');
+            assert(host.firstChild === prepared[0].frame.canvas && display?.etag === '"Generation A"', 'Old fetched generation was not displayed coherently.');
+            assert(old.disposals === 1 && prepared[0].disposals === 0, 'Old response lost ownership before replacement.');
+          } else {
+            assert(waits === 2, 'Unexpected extra poll.');
+            assert(prepared[1].generation === b.generation && host.firstChild === prepared[1].frame.canvas && display?.etag === '"Generation B"', 'Next poll did not converge on the new target.');
+            assert(prepared[0].disposals === 1 && prepared[1].disposals === 0, 'Replacement released the wrong generation.');
+            abort.abort();
+          }
+        },
+        report: (error) => { errors.push(error); },
+      });
+      try {
+        await entered.promise;
+        assert(sent.length === 1 && host.firstChild === old.canvas, 'Preparation overlapped another acquisition or changed the frame early.');
+        target = b;
+        release.release();
+        await task;
+        assert(JSON.stringify(sent) === JSON.stringify([null, '"Generation A"']), 'Next acquisition used the wrong ETag.');
+      } finally { abort.abort(); release.release(); await task; }
+    });
+    await check('A stable target survives fetch and render failures, then remains displayed on 304', async () => {
+      const old = initial();
+      const previous = await envelope('Previous frame');
+      const target = await envelope('Stable target');
+      const abort = new AbortController(), sent: Array<string | null> = [], errors: unknown[] = [], delays: number[] = [];
+      const prepared: Array<{ frame: Prepared; disposals: number }> = [];
+      let failRender = false, failedApp: Application | undefined;
+      display = new Display(host, old, async (input, s) => {
+        const injectFailure = failRender; failRender = false;
+        const scene = await prepareScene(input, s, {
+          loadFont: loadDisplayFont,
+          decodeImage: (blob) => createImageBitmap(blob),
+          createApplication: () => {
+            const app = new Application();
+            if (injectFailure) { failedApp = app; app.render = () => { throw new Error('Injected stable-target render failure'); }; }
+            return app;
+          },
+        });
+        const tracked = { frame: scene, disposals: 0 }; prepared.push(tracked);
+        return { canvas: scene.canvas, dispose() { tracked.disposals++; scene.dispose(); } };
+      });
+      await display.accept(response(previous, 'previous'), signal());
+      failRender = true;
+      try {
+        await pollDisplay(display, abort.signal, {
+          fetch: async (_input, init) => {
+            const tag = new Headers(init?.headers).get('If-None-Match'); sent.push(tag);
+            if (sent.length === 1) throw new TypeError('Injected network failure');
+            if (tag === '"stable"') return new Response(null, { status: 304, headers: { ETag: '"stable"' } });
+            return response(target, 'stable');
+          },
+          wait: async (delay) => {
+            delays.push(delay);
+            if (delays.length <= 2) {
+              assert(host.firstChild === prepared[0].frame.canvas && display?.etag === '"previous"', 'Failure changed the retained frame or ETag.');
+              assert(prepared.length === 1 && prepared[0].disposals === 0, 'Failure released the active frame.');
+              assert(errors.length === delays.length, 'Expected failure did not occur.');
+            } else {
+              assert(prepared.length === 2 && host.firstChild === prepared[1].frame.canvas && display?.etag === '"stable"', 'Recovery or 304 did not retain the stable target.');
+              assert(prepared[0].disposals === 1 && prepared[1].disposals === 0, 'Successful frame ownership changed unexpectedly.');
+              assert(errors.length === 2, 'Unexpected failure after recovery.');
+            }
+            if (delays.length === 5) abort.abort();
+          },
+          report: (error) => { errors.push(error); },
+        });
+        assert(failedApp && !failedApp.renderer, 'Failed rendering application was not released.');
+        assert(JSON.stringify(sent) === JSON.stringify(['"previous"', '"previous"', '"previous"', '"stable"', '"stable"']), 'An unsuccessful ETag suppressed recovery.');
+        assert(JSON.stringify(delays) === JSON.stringify([1000, 2000, 1000, 1000, 1000]), 'Recovery did not reset retry delay.');
+      } finally { abort.abort(); }
+    });
+
     const apps: Application[] = [], bitmaps: ImageBitmap[] = [], textures: Texture[] = [];
     let fault: 'none' | 'font' | 'decode' | 'init' | 'render' = 'none';
     const platform = {

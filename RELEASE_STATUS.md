@@ -11,7 +11,7 @@ The initial software implementation is complete within the agreed scope: daily t
 - Docker production/development configurations and persistent volumes.
 - Go race checks, deterministic concurrent HTTP tests, and 12 process-kill recovery cases.
 - Real TCP tests for unread display responses, simultaneous publication, disconnected readers, and interrupted uploads.
-- 23 development-browser checks covering failures, recovery, and resource ownership.
+- 25 development-browser checks covering failures, recovery, and resource ownership.
 - Offline backup/restore procedures and a disposable runtime smoke script.
 
 The documented Go, renderer, runtime, browser, and Alloy checks are run locally. No GitHub Actions workflow is enabled.

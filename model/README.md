@@ -103,6 +103,104 @@ Two hypotheses remain deliberately false and are checked with `check ... expect 
 - **AlwaysLatest**: if the target changes after retrieval, an old valid response can still render successfully.
   This agrees with the accepted policy of allowing temporary staleness.
 
+## Correspondence to implementation tests
+
+Assertion names do not appear in the test sources. This table records the correspondence by comparing each
+assertion's formula with what the tests actually observe.
+[Verification and implementation order](../design/verification-and-delivery.md) maps the same assertions to
+implementation boundaries and required evidence; this table maps them to the checks that produce that evidence.
+
+Short names used below: `content` = `internal/content/validate_test.go`, `compiler` = `internal/compiler/compiler_test.go`,
+`schedule` = `internal/schedule/daily_test.go`, `store` = `internal/store/store_test.go`, `crash` = `internal/store/crash_test.go`,
+`api` = `internal/httpserver/api_test.go`, `integration` = `internal/httpserver/integration_test.go`,
+`network` = `internal/httpserver/network_test.go`, `browser` = `renderer/tests/renderer.ts`.
+
+Correspondence strength: **Direct** means a check observes the assertion's own conclusion. **Partial** means it observes
+only some of the transitions or fields the assertion covers. **Indirect** means the modeled state does not exist in the
+implementation and a refined property stands in for it. **None** means no corresponding implementation check exists. The two hypotheses checked with `expect 1`
+are deliberately false; implementation tests may illustrate their counterexamples. These labels describe
+observations in finite tests, not proofs of the Alloy formulas over all executions.
+
+### content.als
+
+| Assertion | Implementation checks | Correspondence |
+|---|---|---|
+| `OnlyValidatedPublished` | `content`: TestStrictJSON, TestSemanticRejections, TestAssets, TestResourceLimits, FuzzValidateJSON; `compiler`: TestCompileRejectsTextBeforePublication; `api`: TestUploadRetrieveAndReject. Accepting side: `content`: TestDailyExample, TestImageElementAndJPEG, TestIssuePathsAndStaticContent; `compiler`: TestEmptyTextRoundTrip | Direct for the exercised publication cases. The 26 strict-JSON and semantic rejection cases test validation alone; they do not inspect stored state. The API test separately verifies unchanged ETags for three rejected uploads (duplicate JSON keys, an unused asset, and text overflow), and successful publication of the daily example. |
+| `NoMixedPackage` | `integration`: TestSlowTransfersDoNotBlockPublication through `assertImageEnvelope`; `crash`: TestCrashRecoveryBoundaries; `compiler`: TestCompileAndRestore | Direct. Distinct image bytes per generation make mixing observable rather than only scene identifiers. |
+| `NoDanglingAsset` | `content`: TestAssets; `integration`: `assertImageEnvelope`; `browser`: missing image reference | Direct. Covers missing, unused, invalid, animated, and oversized assets. |
+| `ValidationBoundToStaging` | `api`: TestMultipartAndLimits; `integration`: TestInterruptedUploadRetainsCurrentAndReleasesAdmission; `network`: TestSocketInterruptedUpload | Partial. No durable field corresponds to `checked`; staging is confined to one request, so only discarding an interrupted or duplicated upload is observed. |
+| `RejectionPreservesCurrent` | `api`: TestUploadRetrieveAndReject; `integration`: TestInterruptedUploadRetainsCurrentAndReleasesAdmission; `network`: TestSocketInterruptedUpload; `store`: TestSameSceneConsumesAndFailedWritePreservesDurableState, TestCommitFailureStopsServing | Direct, and extended beyond the model to failed writes and ambiguous commits. |
+
+### scheduler.als
+
+The implementation keeps no `issued`, `pending`, or `consumed` set. It compresses them into the daily template plus one
+durable cursor, so assertions about those sets have no direct counterpart.
+
+| Assertion | Implementation checks | Correspondence |
+|---|---|---|
+| `Partition` | `schedule`: TestConsecutiveBatches, TestLookupMatchesEnumeration | Indirect. Stands in as consecutive generated intervals with no duplicate, missing, or out-of-range occurrence. |
+| `NoReplay` | `schedule`: TestCatchUpRollbackAndRestart; `store`: TestRestartRollbackAndSnapshots; `integration`: TestConditionalSchedulingPersistsBefore304 | Direct. Lookups at the cursor, one second before it, and one day before it all return nothing. |
+| `SingleWinner` | `schedule`: TestInvalidInputs, TestLookupMatchesEnumeration; `content`: TestSemanticRejections (`duplicate_time`) | Direct. The model's input constraint on distinct start seconds is implemented as input validation. |
+| `NoEarlyTransition` | `schedule`: TestDailyBoundaries, TestLookupMatchesEnumeration; `store`: TestRestartRollbackAndSnapshots | Direct. Exact transition seconds, one second before and after, and negative Unix seconds. |
+| `PollDrainsObsolete` | `store`: TestSameSceneConsumesAndFailedWritePreservesDurableState; `schedule`: TestCatchUpRollbackAndRestart; `crash`: TestCrashRecoveryBoundaries (`advance`, `same_scene`) | Direct. The cursor advances past skipped occurrences, including a transition that retains the same scene. |
+| `NoHistoricalRegeneration` | `schedule`: TestCatchUpRollbackAndRestart, TestConsecutiveBatches; `integration`: TestConditionalSchedulingPersistsBefore304 | Indirect. The model orders newly issued entries beyond every previously issued entry. The implementation has no issued set or generation horizon; tests observe strictly-after-cursor lookup and ordered generated intervals, including a five-month forward jump. |
+| `EveryDuePollHasTarget` | `schedule`: TestCatchUpRollbackAndRestart, TestStaticScheduleStillConsumesMidnight; `store`: TestRestartRollbackAndSnapshots; `integration`: TestConditionalSchedulingPersistsBefore304 | Direct. Includes a request one hour after the due transition and a static schedule consuming midnight. |
+
+### renderer.als
+
+| Assertion | Implementation checks | Correspondence |
+|---|---|---|
+| `DisplayAlwaysValid` | `browser`: unsolicited `304`, real PixiJS preparation, and the 13 checks sharing the `preserve` helper | Direct. The startup frame stands for Builtin and is never replaced by an invalid response. |
+| `FailurePreservesDisplay` | `browser`: the 13 `preserve` checks — malformed JSON and UTF-8, `503`, oversized stream, unsupported profile, digest mismatch, undecodable PNG, missing reference, text overflow, and injected font, decode, initialization, and rendering failures | Direct. |
+| `ChangeRequiresSuccessfulRender` | `browser`: swap ordering before old-frame disposal, failed DOM swap, abort during preparation, shutdown during preparation | Direct. |
+| `UnconditionalDelivery` (`expect 1`) | None | None by intent; the assertion is deliberately false. `browser`'s bounded retry backoff shows the matching behavior: repeated `503` never changes the frame. |
+| `AlwaysLatest` (`expect 1`) | `integration`: TestSlowTransfersDoNotBlockPublication; `browser`: An old response renders after target replacement, then polling converges | The browser check directly observes a finite counterexample: A renders after the simulated target changes to B, then the next poll renders B. It uses real PixiJS preparation with simulated transport. Coverage across the real server/browser boundary remains partial; the integration test checks publication separately. |
+| `DeliveryWithRecovery` | `browser`: A stable target survives fetch and render failures, then remains displayed on 304; serial polling and backoff reset | Partial. With simulated transport and real PixiJS preparation, a fixed target recovers after fetch and render failures, then survives two conditional `304` responses with the same canvas and ETag. These finite examples support the implementation behavior; they do not establish the temporal assertion of eventual permanent convergence under recurring successful fetch/render. |
+
+### lifecycle.als
+
+| Assertion | Implementation checks | Correspondence |
+|---|---|---|
+| `CoherentGeneration` | `crash`: TestCrashRecoveryBoundaries; `store`: TestRestartRollbackAndSnapshots, TestUnknownSchemaFails; `integration`: `assertImageEnvelope` | Direct. Three operations at four boundaries compare generation, canonical package bytes, target, cursor, response bytes, ETag, and `integrity_check`. |
+| `DurableNoReplay` | `store`: TestRestartRollbackAndSnapshots, TestSameSceneConsumesAndFailedWritePreservesDurableState; `integration`: TestConditionalSchedulingPersistsBefore304; `crash`: TestCrashRecoveryBoundaries | Direct. Recovery samples a clock behind both possible cursors. |
+| `DisplayOwnsAssets` | `browser`: active-resource assertions inside `preserve`, later valid frame, repeated replacement | Direct. Candidate applications, bitmaps, and textures are released while the active ones stay alive. |
+| `ResponseOwnsAssets` | `integration`: TestSlowTransfersDoNotBlockPublication, `assertImageEnvelope`; `network`: TestSocketBackpressureAndDisconnectedReaders | Direct. Two stopped transfers retain their own pixels and ETag after the old rows are replaced. |
+| `RestartPreservesTarget` | `store`: TestRestartRollbackAndSnapshots, TestCommitFailureStopsServing; `integration`: TestConditionalSchedulingPersistsBefore304; `crash`: TestCrashRecoveryBoundaries | Direct. Reopening with a backward clock retains the consumed target. |
+| `CatchUpLatest` | `schedule`: TestCatchUpRollbackAndRestart, TestLookupMatchesEnumeration; `store`: TestRestartRollbackAndSnapshots; `api`: TestUploadRetrieveAndReject | Direct. An independent enumeration oracle checks the latest due occurrence over 1000 randomized trials. |
+| `FailurePreservesScene` | `browser`: the `preserve` checks, failed DOM swap, HTTP failure | Direct. Display and retained assets are checked together. |
+
+### Reachability scenarios
+
+The `run` predicates also have implementation counterparts, though they are examples rather than contracts.
+
+| Scenario | Implementation check |
+|---|---|
+| `ReplaceAfterRejection`, `MissingAssetRejected`, `CrashAfterValidation` | `api`: TestUploadRetrieveAndReject; `content`: TestAssets; `crash`: `before_begin` and `after_write` phases |
+| `RollbackAfterConsumption`, `CatchUpAfterGap`, `SkipIntermediate`, `SkipSeveral` | `schedule`: TestCatchUpRollbackAndRestart |
+| `ExhaustAndRefill`, `RefillPastDue` | `schedule`: TestConsecutiveBatches |
+| `StoppedClockProgress` | `store`: TestSameSceneConsumesAndFailedWritePreservesDurableState |
+| `RecoverAfterFailure`, `RetryAfterLoss` | `browser`: serial polling, later valid frame |
+| `InvalidWhileDisplaying`, `ValidButRenderFails` | `browser`: malformed responses, injected rendering failure |
+| `ReplaceDuringFetch` | `integration`: TestSlowTransfersDoNotBlockPublication; `browser`: An old response renders after target replacement, then polling converges (simulated target and transport) |
+| `RestartThenRollback` | `integration`: TestConditionalSchedulingPersistsBefore304; `store`: TestRestartRollbackAndSnapshots |
+
+### Known gaps in the correspondence
+
+`Partition` and `NoHistoricalRegeneration` have indirect evidence through interval generation and cursor-based lookup.
+The implementation does not expose the modeled sets or issued-entry frontier, so their formulas are not observed directly.
+`ValidationBoundToStaging` remains partial for the same kind of reason.
+`UnconditionalDelivery` has no dedicated implementation check; its Alloy counterexample is intentional.
+`DeliveryWithRecovery` has finite recovery examples rather than a proof of its temporal formula.
+
+Several checks have no counterpart here because the model excludes their subject: route and status handling
+(`internal/httpserver/server_test.go`), font coverage and fitting (`compiler`: TestFontLayout), UTC offset syntax
+(`schedule`: TestInvalidInputs), request size and media type limits (`api`: TestMultipartAndLimits), and socket
+backpressure with transfer admission (`network`). JSON syntax, pixel layout, HTTP formats, and filesystem behavior
+are outside the models' scope.
+
+The Go checks run under `go test`; the 25 browser checks are started by hand from `/tests/` in the development
+environment. The six renderer-side assertions therefore depend on a manual run for their evidence.
+
 ## Execution and results
 
 All 41 commands were checked with Alloy 6.2.0 / SAT4J. The 23 invariant and conditional-property checks were UNSAT (no counterexample),
