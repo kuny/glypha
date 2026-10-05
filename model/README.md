@@ -181,7 +181,7 @@ The `run` predicates also have implementation counterparts, though they are exam
 | `StoppedClockProgress` | `store`: TestSameSceneConsumesAndFailedWritePreservesDurableState |
 | `RecoverAfterFailure`, `RetryAfterLoss` | `browser`: serial polling, later valid frame |
 | `InvalidWhileDisplaying`, `ValidButRenderFails` | `browser`: malformed responses, injected rendering failure |
-| `ReplaceDuringFetch` | `integration`: TestSlowTransfersDoNotBlockPublication; `browser`: An old response renders after target replacement, then polling converges (simulated target and transport) |
+| `ReplaceDuringFetch` | `integration`: TestSlowTransfersDoNotBlockPublication (old responses retain image bytes absent from the replacement package). The browser target-replacement check uses identical image assets in A and B, so it does not cover this asset-difference scenario. |
 | `RestartThenRollback` | `integration`: TestConditionalSchedulingPersistsBefore304; `store`: TestRestartRollbackAndSnapshots |
 
 ### Known gaps in the correspondence
