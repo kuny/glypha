@@ -134,6 +134,8 @@ Errors are logged to the server or browser console and never replace the active 
 
 ## Operations and completion
 
+See [Running Glypha with an AI Agent](docs/using-ai-agents.md) for example prompts to start the application, create content, upload it, and investigate validation errors with Claude Code or Codex.
+
 See [operations](ops/README.md) for startup, updates, health recovery, offline backup, and restoration. [Initial implementation status](RELEASE_STATUS.md) separates completed software checks from the deferred appliance trial. CI adoption is deferred; no GitHub Actions workflow is enabled. Run the documented Docker, browser, and Alloy checks locally.
 
 ## Design and models
