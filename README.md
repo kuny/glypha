@@ -6,6 +6,8 @@
 A small digital signage system built around retaining the last successful scene.
 The server is written in Go; the browser renderer uses PixiJS 8 and TypeScript.
 
+Start with [A Tour of Glypha](docs/tour.md) for a guided introduction to text, images, daily schedules, publication, and the limits of the current format.
+
 ## Current implementation
 
 The first end-to-end content path is implemented:
