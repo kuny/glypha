@@ -103,6 +103,8 @@ docker compose -p glypha-dev -f compose.dev.yml exec -T server go test -race ./.
 
 Browser failure checks run against the actual PixiJS renderer in the development environment. Open [renderer checks](http://localhost:5173/tests/) and select **Run checks**. All 25 checks should pass. Responses are isolated fixtures; the checks do not upload or modify server content. The final test frame remains visible for inspection. This page is not included in the production build.
 
+For optional browser automation and screenshots, see [Setting Up Playwright on macOS and Windows WSL](docs/playwright-setup.md). This guide describes a separate test package and AI-agent browser setup; these are not installed or enabled by default.
+
 The checks cover failed responses, malformed payloads and images, font/layout/graphics failures, failed swaps, cancellation, serial polling, ETag ownership, retry backoff, recovery, and repeated resource disposal. TypeScript checking includes the test sources, but `npm run build` does not execute browser checks.
 
 For a host workflow, use Go 1.26 or newer and Node 24:

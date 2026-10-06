@@ -139,6 +139,8 @@ When I say “OK,” upload content/cafe/content.json with its assets again.
 
 An agent with browser tools can also inspect the layout. For example, ask it to open `http://localhost:8080` at 1920×1080, take a screenshot, and check text placement, spacing, and colors. This requires browser automation support, such as Playwright or the agent's available browser tools.
 
+See [Setting Up Playwright for Glypha](playwright-setup.md) for optional test-runner and MCP setup on macOS and Windows WSL.
+
 ### Avoid Repeating the Rules
 
 Repository instruction files can provide recurring context: Claude Code uses `CLAUDE.md`, and Codex uses `AGENTS.md`. You can ask an agent to create them with guidance such as the following. If an instruction file already exists, incorporate the guidance without replacing unrelated instructions.
